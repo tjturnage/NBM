@@ -73,7 +73,7 @@ grr = False
 
 p = re.compile('KGRR')
 s = re.compile('SOL')
-#download_nbm_bulletin()
+download_nbm_bulletin()
 src = 'C:/data/nbm_raw.txt'
 dst = open('C:/data/nbmout.txt', 'w')
 with open(src) as fp:  
@@ -130,7 +130,8 @@ dp_min = round_values(min(dp_list),1,'down')
 
 wspd = nbm.loc[:, ['WSP']]
 wgst = nbm.loc[:, ['GST']]
-
+wg_list = nbm.GST.tolist()
+wg_max = round_values(max(wg_list),1,'up')
 sn01 = nbm.S01.tolist()
 qp_list = nbm.Q01.tolist()
 qp_max = max(qp_list)
@@ -147,20 +148,21 @@ p_sn = nbm.loc[:, ['PSN']]
 start_time = pd_series[0]
 end_time = pd_series[-1]
 myFmt = DateFormatter("%d%h")
-#ax.xaxis.set_major_formatter(myFmt):
+
 prods = {}
 prods['snow1'] = {'data': sn01, 'color':(0.2, 0.4, 0.6, 0.6), 'ymin':0.0,'ymax':2.0 }
 prods['pop01'] = {'data': ppi, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':0,'ymax':110}
-prods['qpf01'] = {'data': qp01, 'color':(0.2, 0.2, 0.8, 0.6), 'ymin':0.0,'ymax':0.50}
-prods['t'] = {'data': t_list, 'color':(0.8, 0.0, 0.0, 0.8), 'ymin':t_min,'ymax':t_max }
-prods['dp'] = {'data': dp_list, 'color':(0.0, 0.9, 0.1, 0.6), 'ymin':dp_min,'ymax':dp_max  }
-## Rotate date labels automaticall
-#fig.autofmt_xdate()
-products = [t,dp]
-products = ['pop01','qpf01','t','dp']
+prods['qpf01'] = {'data': qp_list, 'color':(0.2, 0.2, 0.8, 0.6), 'ymin':0.0,'ymax':0.50}
+prods['t'] = {'data': t, 'color':(0.8, 0.0, 0.0, 0.8), 'ymin':t_min,'ymax':t_max }
+prods['dp'] = {'data': dp, 'color':(0.0, 0.9, 0.1, 0.6), 'ymin':dp_min,'ymax':dp_max  }
+prods['wspd'] = {'data': wspd, 'color':(0.7, 0.7, 0.7, 0.8), 'ymin':0,'ymax':wg_max}
+prods['wgst'] = {'data': wgst, 'color':(0.7, 0.7, 0.7, 0.6), 'ymin':0,'ymax':wg_max}
+
+
+products = ['pop01','qpf01','t','dp','wspd','wgst']
 
 myFmt = DateFormatter("%d%b\n%HZ")
-fig, axes = plt.subplots(4,1,figsize=(12,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
+fig, axes = plt.subplots(len(products),1,figsize=(12,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
 font = {'weight' : 'normal',
         'size'   : 24}
 plt.suptitle('NBM hourly Guidance - KGRR')
@@ -168,8 +170,8 @@ font = {'weight' : 'normal', 'size'   : 12}
 for y,a in zip(products,axes.ravel()):
     a.xaxis.set_major_formatter(myFmt)
     a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-    if y == 't' or y == 'dp':
-        a.plot(t,color=prods[y]['color'])
+    if y != 'pop01' and y != 'qpf01':
+        a.plot(prods[y]['data'],color=prods[y]['color'])
     else:
         a.bar(pd_series,prods[y]['data'],width=1/26, color=prods[y]['color'])
 
