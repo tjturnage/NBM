@@ -17,10 +17,11 @@ MHT TWD TWS HID
 """
 import re
 import os
+import sys
 import math
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FormatStrFormatter
+#from matplotlib.ticker import FormatStrFormatter
 from matplotlib.dates import DateFormatter
 from bs4 import BeautifulSoup
 import requests
@@ -40,6 +41,19 @@ def dtList(dtLine):
     idx = pd.date_range(pTime, periods=25, freq='H')
     return idx[1:]
 
+def bounds(dtLine):
+    mdyList = dtLine.split()
+    hrStr = mdyList[-2][0:2]
+    hr = int(hrStr)
+    mdy_group = mdyList[-3]
+    mm_dd_yr = mdy_group.split('/')
+    mm = int(mm_dd_yr[0])
+    dd = int(mm_dd_yr[1])
+    yyyy = int(mm_dd_yr[-1])
+    pTime = pd.Timestamp(yyyy,mm,dd,hr)
+    idx = pd.date_range(pTime, periods=26, freq='H')
+    return idx[0],idx[-1]
+
 def round_values(x,places,direction):
     amount = 10**places
     if direction == 'up':
@@ -49,7 +63,6 @@ def round_values(x,places,direction):
        
 
 def download_nbm_bulletin():
-    base_dir = 'C:/data'
     url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/"
     searchStr = 'nbh'
     page = requests.get(url)
@@ -67,15 +80,53 @@ def download_nbm_bulletin():
     open(dst, 'wb').write(r.content)
     return
 
+def u_v_components(wdir, wspd):
+    u = (math.sin(math.radians(wdir)) * wspd) * -1.0
+    v = (math.cos(math.radians(wdir)) * wspd) * -1.0
+    #loc = str(int(x)) + ',' + str(int(y)) + ',1,'
+    return u,v
 
+try:
+    os.listdir('/usr')
+    windows = False
+    base_dir = '/data/scripts'
+    sys.path.append('/data/scripts/resources')
+    image_dir = os.path.join('/var/www/html/radar','images')
+except:
+    windows = True
+    base_dir = 'C:/data'    
+    image_dir = os.path.join(base_dir,'images','NBM')
+    src = os.path.join(base_dir,'nbm_raw.txt')
+    dst_file = os.path.join(base_dir,'nbm_out.txt')
+    sys.path.append('C:/data/scripts/resources')
+
+# ensure image directory is created
+try:
+    os.makedirs(image_dir)
+except:
+    pass
+
+
+SMALL_SIZE = 8
+MEDIUM_SIZE = 10
+BIGGER_SIZE = 12
+BIGGEST_SIZE = 14
+
+plt.rc('font', size=BIGGEST_SIZE)          # controls default text sizes
+plt.rc('axes', titlesize=SMALL_SIZE)     # fontsize of the axes title
+plt.rc('axes', labelsize=BIGGER_SIZE)    # fontsize of the x and y labels
+plt.rc('xtick', labelsize=BIGGER_SIZE)    # fontsize of the tick labels
+plt.rc('ytick', labelsize=MEDIUM_SIZE)    # fontsize of the tick labels
+plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
+plt.rc('figure', titlesize=20)  # fontsize of the figure title
 column_list = []
 grr = False
 
 p = re.compile('KGRR')
 s = re.compile('SOL')
-download_nbm_bulletin()
-src = 'C:/data/nbm_raw.txt'
-dst = open('C:/data/nbmout.txt', 'w')
+#download_nbm_bulletin()
+#src = 'C:/data/nbm_raw.txt'
+dst = open(dst_file, 'w')
 with open(src) as fp:  
     for line in fp:
         #print(line)
@@ -85,6 +136,7 @@ with open(src) as fp:
         if m is not None:
             grr = True
             pd_series = dtList(line)
+            start_time,end_time = bounds(line)
             #print(pd_series)
         elif grr and sol is None:
             start = str(line[1:4])
@@ -128,25 +180,27 @@ dp_list = nbm.DPT.tolist()
 dp_max = round_values(max(dp_list),1,'up')
 dp_min = round_values(min(dp_list),1,'down')
 
+wdir = nbm.loc[:, ['WDR']]
 wspd = nbm.loc[:, ['WSP']]
 wgst = nbm.loc[:, ['GST']]
-wg_list = nbm.GST.tolist()
-wg_max = round_values(max(wg_list),1,'up')
+
+wdir_list = nbm.WDR.tolist()
+wspd_list = nbm.WSP.tolist()
+wgst_list = nbm.GST.tolist()
+wgst_max = round_values(max(wgst_list),1,'up')
+wgst_list = [round(x) for x in wgst_list]
+
 sn01 = nbm.S01.tolist()
 qp_list = nbm.Q01.tolist()
 qp_max = max(qp_list)
 
 
 ppi = nbm.P01.tolist()
-#ppi = nbm.loc[:, ['P01']]
 p_ra = nbm.loc[:, ['PRA']]
 p_zr = nbm.PZR.tolist()
 p_pl = nbm.PPL.tolist()
 p_sn = nbm.loc[:, ['PSN']]
 
-
-start_time = pd_series[0]
-end_time = pd_series[-1]
 myFmt = DateFormatter("%d%h")
 
 prods = {}
@@ -155,34 +209,34 @@ prods['pop01'] = {'data': ppi, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':0,'ymax':110
 prods['qpf01'] = {'data': qp_list, 'color':(0.2, 0.2, 0.8, 0.6), 'ymin':0.0,'ymax':0.50}
 prods['t'] = {'data': t, 'color':(0.8, 0.0, 0.0, 0.8), 'ymin':t_min,'ymax':t_max }
 prods['dp'] = {'data': dp, 'color':(0.0, 0.9, 0.1, 0.6), 'ymin':dp_min,'ymax':dp_max  }
-prods['wspd'] = {'data': wspd, 'color':(0.7, 0.7, 0.7, 0.8), 'ymin':0,'ymax':wg_max}
-prods['wgst'] = {'data': wgst, 'color':(0.7, 0.7, 0.7, 0.6), 'ymin':0,'ymax':wg_max}
+prods['wspd'] = {'data': wspd, 'color':(0.5, 0.5, 0.5, 0.8), 'ymin':0,'ymax':wgst_max}
+prods['wgst'] = {'data': wgst, 'color':(0.7, 0.7, 0.7, 0.7), 'ymin':0,'ymax':wgst_max}
+prods['wdir'] = {'data': wdir, 'color':(0.7, 0.7, 0.7, 0.7), 'ymin':0,'ymax':wgst_max}
 
-
-products = ['pop01','qpf01','t','dp','wspd','wgst']
-
+products = ['pop01','qpf01','t','wdir']
 myFmt = DateFormatter("%d%b\n%HZ")
-fig, axes = plt.subplots(len(products),1,figsize=(12,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
-font = {'weight' : 'normal',
-        'size'   : 24}
+fig, axes = plt.subplots(len(products),1,figsize=(13,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
 plt.suptitle('NBM hourly Guidance - KGRR')
-font = {'weight' : 'normal', 'size'   : 12}
 for y,a in zip(products,axes.ravel()):
     a.xaxis.set_major_formatter(myFmt)
-    a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-    if y != 'pop01' and y != 'qpf01':
+    if y == 't':
+        a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
         a.plot(prods[y]['data'],color=prods[y]['color'])
-    else:
+        a.plot(prods['dp']['data'],color=prods['dp']['color'])
+    if y == 'wdir':
+        a.set_ylim(0,1)
+        a.get_yaxis().set_visible(False)
+        for s,d,g,p in zip(wspd_list,wdir_list,wgst_list,pd_series):
+            u,v = u_v_components(d,s)
+            #print(u,v)
+            #x_position = (w/len(wspd_list)) * 10 
+            a.barbs(p, 0.6, u, v, length=8, color=[0,0,1,0.9], pivot='middle')
+            a.text(p, 0.2, f'{g}',horizontalalignment='center',color=[0,0,1,0.9])
+            #a.plot(prods['wspd']['data'],color=prods['wspd']['color'])            
+    if y == 'pop01' or y == 'qpf01':
+        a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+        a.plot(prods[y]['data'],color=prods[y]['color'])
         a.bar(pd_series,prods[y]['data'],width=1/26, color=prods[y]['color'])
 
-"""
-ax1.plot(dp,'g--')
-ax1.plot(t,'r--')
-ax2.plot(wspd,'b')
-ax2.plot(wgst,'b--')
-ax3.bar(pd_series,ppi,width=1/26)
-ax3.plot(p_sn,'b--')
-ax4.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-ax4.bar(pd_series,qp01,width=1/26)
-ax5.bar(pd_series,sn01,width=1/26)
-"""
+image_dst_path = os.path.join(image_dir,'GRR_NBM.png')
+plt.savefig(image_dst_path,format='png')
