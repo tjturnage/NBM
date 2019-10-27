@@ -21,10 +21,13 @@ import sys
 import math
 import pandas as pd
 import matplotlib.pyplot as plt
+from my_functions import GridShader
 #from matplotlib.ticker import FormatStrFormatter
 from matplotlib.dates import DateFormatter
+import matplotlib.dates as mdates
 from bs4 import BeautifulSoup
 import requests
+import matplotlib.gridspec as gridspec
 
 #https://www.weather.gov/mdl/nbm_text?ele=NBH&cyc=00&sta=KGRR&download=yes
 
@@ -168,6 +171,9 @@ nbm.set_index(pd_series, inplace=True)
 # qpf is in hundredths and snow is in tenths of an inch, so have to convert
 nbm.Q01 = nbm.Q01.multiply(0.01)
 nbm.S01 = nbm.Q01.multiply(0.1)
+nbm.VIS = nbm.VIS.multiply(0.1)
+
+sky = nbm.loc[:, ['SKY']]
 
 # slice out columns for the elements you want to plot
 t = nbm.loc[:, ['TMP']]
@@ -184,17 +190,29 @@ wdir = nbm.loc[:, ['WDR']]
 wspd = nbm.loc[:, ['WSP']]
 wgst = nbm.loc[:, ['GST']]
 
+sky_list = nbm.SKY.tolist()
 wdir_list = nbm.WDR.tolist()
 wspd_list = nbm.WSP.tolist()
 wgst_list = nbm.GST.tolist()
 wgst_max = round_values(max(wgst_list),1,'up')
 wgst_list = [round(x) for x in wgst_list]
 
+vis = nbm.loc[:, ['VIS']]
+vis_list = nbm.VIS.tolist()
+wgst_max = round_values(max(wgst_list),1,'up')
+wgst_list = [round(x) for x in wgst_list]
+
 sn01 = nbm.S01.tolist()
 qp_list = nbm.Q01.tolist()
+
 qp_max = max(qp_list)
+qp_yticks = [0.0,0.1,0.2,0.5,0.75]
+qp_ylabels = []
+for t in range(0,len(qp_yticks)):
+    qp_ylabels.append(str(qp_yticks[t]))
 
-
+#qp_yticks = [0, 0.1, 0.25, 0.50, 1.00]
+#qp_ylabels = ["0",".1", ".25",".5","1"]
 ppi = nbm.P01.tolist()
 p_ra = nbm.loc[:, ['PRA']]
 p_zr = nbm.PZR.tolist()
@@ -202,41 +220,85 @@ p_pl = nbm.PPL.tolist()
 p_sn = nbm.loc[:, ['PSN']]
 
 myFmt = DateFormatter("%d%h")
-
+hours = mdates.HourLocator()
 prods = {}
-prods['snow1'] = {'data': sn01, 'color':(0.2, 0.4, 0.6, 0.6), 'ymin':0.0,'ymax':2.0 }
-prods['pop01'] = {'data': ppi, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':0,'ymax':110}
-prods['qpf01'] = {'data': qp_list, 'color':(0.2, 0.2, 0.8, 0.6), 'ymin':0.0,'ymax':0.50}
-prods['t'] = {'data': t, 'color':(0.8, 0.0, 0.0, 0.8), 'ymin':t_min,'ymax':t_max }
-prods['dp'] = {'data': dp, 'color':(0.0, 0.9, 0.1, 0.6), 'ymin':dp_min,'ymax':dp_max  }
-prods['wspd'] = {'data': wspd, 'color':(0.5, 0.5, 0.5, 0.8), 'ymin':0,'ymax':wgst_max}
-prods['wgst'] = {'data': wgst, 'color':(0.7, 0.7, 0.7, 0.7), 'ymin':0,'ymax':wgst_max}
-prods['wdir'] = {'data': wdir, 'color':(0.7, 0.7, 0.7, 0.7), 'ymin':0,'ymax':wgst_max}
+prods['snow1'] = {'data': sn01, 'color':(0.2, 0.4, 0.6, 0.6), 'ymin':0.0,'ymax':2.0, 'ylabel':'Snow (inches)' }
+prods['pop01'] = {'data': ppi, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':-5,'ymax':105, 'ylabel':'Precip\nChances\n(%)'}
+prods['qpf01'] = {'data': qp_list, 'color':(0.2, 0.2, 0.8, 0.6), 'ymin':0.0,'ymax':0.50,'ylabel':'Precip\nAmount\n(inches)'}
+prods['t'] = {'data': t, 'color':(0.8, 0.0, 0.0, 0.8), 'ymin':dp_min,'ymax':t_max, 'ylabel':'Temerature\nDewpoint' }
+prods['dp'] = {'data': dp, 'color':(0.0, 0.9, 0.1, 0.6), 'ymin':dp_min,'ymax':t_max, 'ylabel':'Temerature\nDewpoint'  }
+prods['wspd'] = {'data': wspd, 'color':(0.5, 0.5, 0.5, 0.8), 'ymin':0,'ymax':wgst_max,'ylabel':'Wind\nSpeed'}
+prods['wgst'] = {'data': wgst, 'color':(0.7, 0.7, 0.7, 0.7), 'ymin':0,'ymax':wgst_max,'ylabel':'Wind\nSpeed'}
+prods['wdir'] = {'data': wdir, 'color':(0.7, 0.7, 0.7, 0.7), 'ymin':0,'ymax':wgst_max,'ylabel':'Wind\nSpeed'}
+prods['sky'] = {'data': sky_list, 'color':(0.4, 0.4, 0.4, 0.8), 'ymin':-5,'ymax':105, 'yticks':[0,25,50,75,100], 'ylabel':'Sky cover\n(%)'}
+prods['vis'] = {'data': vis, 'color':(0.4, 0.4, 0.4, 0.9), 'ymin':0,'ymax':7.0, 'yticks':[0,0.5,1,2,3,4,5,6], 'ylabel':'Visibility\n(miles)'}
 
-products = ['pop01','qpf01','t','wdir']
+products = ['t','wdir','vis','sky','pop01','qpf01']
 myFmt = DateFormatter("%d%b\n%HZ")
-fig, axes = plt.subplots(len(products),1,figsize=(13,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
+myFmt = DateFormatter("%d\n%HZ")
+fig, axes = plt.subplots(len(products),1,figsize=(16,10),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
+#fig, axes = plt.subplots(len(products),1,figsize=(16,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
+plt.subplots_adjust(bottom=0.1, left=0.25, top=0.9)
 plt.suptitle('NBM hourly Guidance - KGRR')
 for y,a in zip(products,axes.ravel()):
+    a.xaxis.set_major_locator(hours)
     a.xaxis.set_major_formatter(myFmt)
+    a.yaxis.set_label_coords(-0.08,0.30)
+
     if y == 't':
+        a.grid()
+        a.get_xaxis().set_visible(False)
+        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.5)
         a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+        a.set_ylabel(prods[y]['ylabel'], rotation=0)
         a.plot(prods[y]['data'],color=prods[y]['color'])
         a.plot(prods['dp']['data'],color=prods['dp']['color'])
+
+    if y == 'vis':
+        a.grid()
+        a.get_xaxis().set_visible(False)
+        a.set_ylabel(prods[y]['ylabel'], rotation=0)
+        a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+        a.set(yticks = [1, 3, 5], yticklabels = ["1", "3","5"])
+
+        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.6)
+        a.plot(prods[y]['data'],color=prods[y]['color'])
+        a.set_ylabel(prods[y]['ylabel'], rotation=0)
     if y == 'wdir':
         a.set_ylim(0,1)
-        a.get_yaxis().set_visible(False)
+        a.set_ylabel(prods[y]['ylabel'], rotation=0)
+        a.get_xaxis().set_visible(False)
+        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.25)
         for s,d,g,p in zip(wspd_list,wdir_list,wgst_list,pd_series):
             u,v = u_v_components(d,s)
             #print(u,v)
             #x_position = (w/len(wspd_list)) * 10 
             a.barbs(p, 0.6, u, v, length=8, color=[0,0,1,0.9], pivot='middle')
             a.text(p, 0.2, f'{g}',horizontalalignment='center',color=[0,0,1,0.9])
+
             #a.plot(prods['wspd']['data'],color=prods['wspd']['color'])            
-    if y == 'pop01' or y == 'qpf01':
+    if y == 'pop01':
+        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
         a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
         a.plot(prods[y]['data'],color=prods[y]['color'])
-        a.bar(pd_series,prods[y]['data'],width=1/26, color=prods[y]['color'])
+        a.bar(pd_series,prods[y]['data'],width=1/25, align="edge",color=prods[y]['color'])
+        a.set_ylabel(prods[y]['ylabel'], rotation=0)
+        a.set(yticks = [0, 20, 40, 60, 80, 100], yticklabels = ["0","20", "40","60","80","100"])
 
+    if y == 'sky':
+        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
+        a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+        a.plot(prods[y]['data'],color=prods[y]['color'])
+        a.bar(pd_series,prods[y]['data'],width=1/26, align="edge",color=prods[y]['color'])
+        a.set_ylabel(prods[y]['ylabel'], rotation=0)
+        a.set(yticks = [0, 20, 40, 60, 80, 100], yticklabels = ["0","20", "40","60","80","100"])
+
+    if y == 'qpf01':
+        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
+        a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+        a.plot(prods[y]['data'],color=prods[y]['color'])
+        a.bar(pd_series,prods[y]['data'],width=1/25, align="edge",color=prods[y]['color'])
+        a.set_ylabel(prods[y]['ylabel'], rotation=0)
+        a.set(yticks = qp_yticks, yticklabels = qp_ylabels)
 image_dst_path = os.path.join(image_dir,'GRR_NBM.png')
 plt.savefig(image_dst_path,format='png')
