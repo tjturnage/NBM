@@ -56,9 +56,12 @@ def round_values(x,places,direction):
         return int(math.floor(x / float(amount))) * int(amount)
        
 
-def download_nbm_bulletin():
+def download_nbm_bulletin(bulletin_type):
     url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/"
-    searchStr = 'nbh'
+    if bulletin_type == 'hourly':
+        searchStr = 'nbh'
+    elif bulletin_type == 'short':
+        searchStr = 'nbs'        
     page = requests.get(url)
     soup = BeautifulSoup(page.content, 'html.parser')
 
@@ -92,8 +95,8 @@ except:
     windows = True
     base_dir = 'C:/data'    
     image_dir = os.path.join(base_dir,'images','NBM')
-    src = os.path.join(base_dir,'nbm_raw.txt')
-    dst_file = os.path.join(base_dir,'nbm_trimmed.txt')
+    raw_nbm_file = os.path.join(base_dir,'nbm_raw.txt')
+    trimmed_nbm_file =  os.path.join(base_dir,'nbm_trimmed.txt')
     sys.path.append('C:/data/scripts/resources')
 
 # ensure image directory is created
@@ -116,14 +119,15 @@ import requests
 
 column_list = []
 station_found = False
-#station_name = 'KBIL'
-p = re.compile('KBIL')
+station_name = 'KDVN'
+p = re.compile(station_name)
 s = re.compile('SOL')
-#download_nbm_bulletin()
-src_file = 'C:/data/nbm_raw.txt'
 
-dst = open('C:/data/nbmout.txt', 'w')
-with open(src_file) as fp:  
+download_nbm_bulletin('hourly')
+
+
+dst = open(trimmed_nbm_file, 'w')
+with open(raw_nbm_file) as fp:  
     for line in fp:
         #print(line)
         m = p.search(line)
@@ -145,7 +149,7 @@ with open(src_file) as fp:
 
 elements = column_list[1:]
 nbm_old = None
-nbm_old = pd.read_fwf('C:/data/nbmout.txt', widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
+nbm_old = pd.read_fwf(trimmed_nbm_file, widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
 
 # flip table so times are rows to align with pandas
 nbm = nbm_old.transpose()
@@ -187,7 +191,9 @@ sky_list = nbm.SKY.tolist()
 
 nbm.VIS = nbm.VIS.multiply(0.1)
 vis = nbm.loc[:, ['VIS']]
+vis.clip(upper=7.0,inplace=True)
 vis_list = nbm.VIS.tolist()
+#vis_clipped = np.clip(vis_list,0,7.0)
 
 #bulletin lists hourly snow in tenths of an inch
 nbm.S01 = nbm.Q01.multiply(0.1)
@@ -221,7 +227,7 @@ prods['wspd'] = {'data': wspd, 'color':(0.5, 0.5, 0.5, 0.8),'ylabel':'Wind\nSpee
 prods['wgst'] = {'data': wgst, 'color':(0.7, 0.7, 0.7, 0.7),'ylabel':'Wind\nSpeed'}
 prods['wdir'] = {'data': wdir, 'color':(0.7, 0.7, 0.7, 0.7),'ylabel':'Wind\nSpeed'}
 prods['sky'] = {'data': sky_list, 'color':(0.4, 0.4, 0.4, 0.8), 'ymin':-5,'ymax':105, 'yticks':[0,25,50,75,100], 'ylabel':'Sky cover\n(%)'}
-prods['vis'] = {'data': vis, 'color':(0.4, 0.4, 0.4, 0.9), 'ymin':0,'ymax':7.0, 'yticks':[0,0.5,1,2,3,4,5,6], 'ylabel':'Visibility\n(miles)'}
+prods['vis'] = {'data': vis, 'color':(0.7, 0.7, 0.3, 1), 'ymin':-0.5,'ymax':8, 'ylabel':'Visibility\n(miles)'}
 
 products = ['t','wdir','vis','sky','pop01','qpf01','snow']
 
@@ -232,7 +238,7 @@ myFmt = DateFormatter("%d\n%HZ")
 fig, axes = plt.subplots(len(products),1,figsize=(16,10),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
 #fig, axes = plt.subplots(len(products),1,figsize=(16,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
 plt.subplots_adjust(bottom=0.1, left=0.25, top=0.9)
-plt.suptitle('NBM hourly Guidance')
+plt.suptitle('NBM hourly Guidance - ' + station_name + '\n' + start_time.strftime('%B %d, %Y -- %HZ'))
 #plt.suptitle('NBM hourly Guidance - KGRR')
 for y,a in zip(products,axes.ravel()):
     a.xaxis.set_major_locator(hours)
@@ -245,19 +251,19 @@ for y,a in zip(products,axes.ravel()):
         gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.5)
         a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
         a.set_ylabel(prods['t']['ylabel'], rotation=0)
-        a.plot(prods['t']['data'],color=prods['t']['color'])
-        a.plot(prods['dp']['data'],color=prods['dp']['color'])
+        a.plot(prods['dp']['data'],linewidth=3,color=prods['dp']['color'])
+        a.plot(prods['t']['data'],linewidth=3,color=prods['t']['color'])
 
     if y == 'vis':
         a.grid()
-        a.get_xaxis().set_visible(False)
-        a.set_ylabel(prods[y]['ylabel'], rotation=0)
+        a.get_xaxis().set_visible(True)
+        #a.set_ylabel(prods[y]['ylabel'], rotation=0)
         a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-        a.set(yticks = [1, 3, 5], yticklabels = ["1", "3","5"])
+        a.set(yticks = [1, 3, 5, 7], yticklabels = ["1","3","5", ">6"])
 
         gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.6)
-        a.plot(prods[y]['data'],color=prods[y]['color'])
-        a.set_ylabel(prods[y]['ylabel'], rotation=0)
+
+        a.plot(prods[y]['data'],linewidth=4,color=prods[y]['color'])
 
     if y == 'wdir':
         a.set_ylim(0,1)
