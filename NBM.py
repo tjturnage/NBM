@@ -21,32 +21,31 @@ MHT TWD TWS HID
 import os
 import sys
 
-def dtList(dtLine):
+def dtList_nbm(dtLine,bulletin_type):
     # returns both a pandas time series and a string for plotting title
     mdyList = dtLine.split()
     hrStr = mdyList[-2][0:2]
     hr = int(hrStr)
+    hours_ahead = 6 - (hr%6)
     mdy_group = mdyList[-3]
     mm_dd_yr = mdy_group.split('/')
     mm = int(mm_dd_yr[0])
     dd = int(mm_dd_yr[1])
     yyyy = int(mm_dd_yr[-1])
     pTime = pd.Timestamp(yyyy,mm,dd,hr)
-    idx = pd.date_range(pTime, periods=25, freq='H')
-    return idx[1:]
+    if bulletin_type == 'short':
+        idx2 = pd.date_range(pTime, periods=23, freq='3H')
+        idx = idx2 + pd.offsets.Hour(hours_ahead)
+        start_time = idx[0]
+        end_time = idx[-1]
+    elif bulletin_type == 'hourly':
+        idx2 = pd.date_range(pTime, periods=26, freq='H')
+        idx = idx2[1:-1]
+        start_time = idx2[0]
+        end_time = idx2[-1]
 
-def bounds(dtLine):
-    mdyList = dtLine.split()
-    hrStr = mdyList[-2][0:2]
-    hr = int(hrStr)
-    mdy_group = mdyList[-3]
-    mm_dd_yr = mdy_group.split('/')
-    mm = int(mm_dd_yr[0])
-    dd = int(mm_dd_yr[1])
-    yyyy = int(mm_dd_yr[-1])
-    pTime = pd.Timestamp(yyyy,mm,dd,hr)
-    idx = pd.date_range(pTime, periods=26, freq='H')
-    return idx[0],idx[-1]
+    return idx,start_time,end_time
+
 
 def round_values(x,places,direction):
     amount = 10**places
@@ -56,12 +55,14 @@ def round_values(x,places,direction):
         return int(math.floor(x / float(amount))) * int(amount)
        
 
-def download_nbm_bulletin(bulletin_type):
+def download_nbm_bulletin(bulletin_type,path_check):
     url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/"
     if bulletin_type == 'hourly':
         searchStr = 'nbh'
+        fname = 'nbm_raw_hourly.txt'
     elif bulletin_type == 'short':
-        searchStr = 'nbs'        
+        searchStr = 'nbs'
+        fname = 'nbm_raw_short.txt'
     page = requests.get(url)
     soup = BeautifulSoup(page.content, 'html.parser')
 
@@ -71,19 +72,21 @@ def download_nbm_bulletin(bulletin_type):
             src = os.path.join(url,fName)
             break
 
-    r = requests.get(src)
-    print('downloading ... ' + str(src))
-    fname = 'nbm_raw.txt'
     dst = os.path.join(base_dir,fname)
-    open(dst, 'wb').write(r.content)
-    return
+    if path_check != 'just_path':
+        r = requests.get(src)
+        print('downloading ... ' + str(src))
+        open(dst, 'wb').write(r.content)
+    return dst
 
 def u_v_components(wdir, wspd):
     # since the convention is "direction from"
     # we have to multiply by -1
     u = (math.sin(math.radians(wdir)) * wspd) * -1.0
     v = (math.cos(math.radians(wdir)) * wspd) * -1.0
-    return u,v
+    dx = math.sin(math.radians(wdir)) * -0.4 / (12)
+    dy = math.cos(math.radians(wdir)) * -0.4
+    return u,v, dx, dy
 
 try:
     os.listdir('/usr')
@@ -119,29 +122,41 @@ import requests
 
 column_list = []
 station_found = False
-station_name = 'KDVN'
+station_name = 'KAZO'
 p = re.compile(station_name)
 s = re.compile('SOL')
+dt = re.compile('DT')
 
-download_nbm_bulletin('hourly')
+#bulletin_type = 'short'
+bulletin_type = 'hourly'
+
+if bulletin_type == 'hourly':
+    products = ['t','wind','vis','sky_bar','p06_bar','s06_bar']
+elif bulletin_type == 'hourly':
+    products = ['t','wind','vis','sky_bar','p01_bar','s01_bar']
+
+
+# passing 'just_path' to this function only returns raw_file_path
+# without downloading anything    
+raw_file_path = download_nbm_bulletin(bulletin_type,'just_path')
 
 
 dst = open(trimmed_nbm_file, 'w')
-with open(raw_nbm_file) as fp:  
+with open(raw_file_path) as fp:  
     for line in fp:
-        #print(line)
         m = p.search(line)
         sol = s.search(line)
-    #print(m)
+        dt_match = dt.search(line)
         if m is not None:
             station_found = True
-            pd_series = dtList(line)
-            start_time,end_time = bounds(line)
-            #print(pd_series)
+            pd_series,start_time,end_time = dtList_nbm(line,bulletin_type)
         elif station_found and sol is None:
-            start = str(line[1:4])
-            column_list.append(start)
-            dst.write(line)             
+            if dt_match is not None:
+                pass
+            else:
+                start = str(line[1:4])
+                column_list.append(start)
+                dst.write(line)             
         elif sol is not None and station_found:
             dst.close()
             break
@@ -149,7 +164,11 @@ with open(raw_nbm_file) as fp:
 
 elements = column_list[1:]
 nbm_old = None
-nbm_old = pd.read_fwf(trimmed_nbm_file, widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
+
+if bulletin_type == 'hourly': 
+    nbm_old = pd.read_fwf(trimmed_nbm_file, widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
+elif bulletin_type == 'short':
+    nbm_old = pd.read_fwf(trimmed_nbm_file, widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
 
 # flip table so times are rows to align with pandas
 nbm = nbm_old.transpose()
@@ -161,26 +180,49 @@ col_rename_dict = {i:j for i,j in zip(old_column_names,elements)}
 nbm.rename(columns=col_rename_dict, inplace=True)
 
 # Now that columns are created, there's now a redundant UTC line. Remove it.
-# Then replace the index with the pandas time series
-nbm.drop(['UTC'], inplace=True)
+# Then set the index with the pandas time series
+try:
+    nbm.drop(['UTC'], inplace=True)
+except:
+    pass
+
 nbm.set_index(pd_series, inplace=True)
 
-# slice out columns for the elements you want to plot as lines
-# if you want a bar plat, you just need to send a slice directly "tolist"
-# We will plot TMP and DPT on same pane, so use range min(DPT) to max(TMP)
+
+# To plot time series lines:
+#      slice the dataframe with 'loc'
+# To plot a bar graph:
+#      convert the slice to a list.
+
+# Either is done independently. I'm usually doing both so I have the option of plotting either way.
+
+# TMP and DPT will go on same panel, so using min(DPT) and max(TMP) to define bounds
 t = nbm.loc[:, ['TMP']]
 t_list = nbm.TMP.tolist()
 t_max = round_values(max(t_list),1,'up')
 
 dp = nbm.loc[:, ['DPT']]
 dp_list = nbm.DPT.tolist()
-t_min = round_values(min(dp_list),1,'down')
+dp_min = round_values(min(dp_list),1,'down')
+
+#bumping out the values a little to provide a buffer for yticks and ylabels
+tdp_min = dp_min - 5
+tdp_max = t_max + 5
+
+t_dp_yticks = []
+t_dp_ytick_labels = []
+for r in (-20,-10,0,10,20,30,40,50,60,70,80,90,100):
+    if r > tdp_min and r < tdp_max:
+        t_dp_yticks.append(r)
+        t_dp_ytick_labels.append(str(r))
+
 
 wdir = nbm.loc[:, ['WDR']]
 wdir_list = nbm.WDR.tolist()
 
 wspd = nbm.loc[:, ['WSP']]
 wspd_list = nbm.WSP.tolist()
+wspd_list = [round(x) for x in wspd_list]
 
 wgst = nbm.loc[:, ['GST']]
 wgst_list = nbm.GST.tolist()
@@ -189,47 +231,80 @@ wgst_list = [round(x) for x in wgst_list]
 sky = nbm.loc[:, ['SKY']]
 sky_list = nbm.SKY.tolist()
 
+# sometimes we have to convert units because they're in tenths or hundredths
 nbm.VIS = nbm.VIS.multiply(0.1)
 vis = nbm.loc[:, ['VIS']]
 vis.clip(upper=7.0,inplace=True)
 vis_list = nbm.VIS.tolist()
-#vis_clipped = np.clip(vis_list,0,7.0)
 
-#bulletin lists hourly snow in tenths of an inch
-nbm.S01 = nbm.Q01.multiply(0.1)
-sn01_list = nbm.S01.tolist()
+# probabilities for rain (ra), freezing rain (zr), and sleet (pl)
+p_ra = nbm.loc[:, ['PRA']]
+p_ra_list = nbm.PRA.tolist()
+p_zr = nbm.loc[:, ['PZR']]
+p_zr_list = nbm.PZR.tolist()
+p_pl = nbm.loc[:, ['PPL']]
+p_pl_list = nbm.PPL.tolist()
 
-#bulletin lists hourly QPF in hundredths of an inch
-nbm.Q01 = nbm.Q01.multiply(0.01)
-qp_list = nbm.Q01.tolist()
+# define y axis range and yticks/ylabels for any element that's probabilistic 
+prob_yticks = [0, 20, 40, 60, 80, 100]
+prob_ytick_labels = ["0","20", "40","60","80","100"]
+p_min = -5
+p_max = 105
 
-qp_max = max(qp_list)
-qp_yticks = [0.0,0.1,0.2,0.3]
-qp_ylabels = []
-for z in range(0,len(qp_yticks)):
-    qp_ylabels.append(str(qp_yticks[z]))
+qpf_color = (0.1, 0.9, 0.1, 0.8)
 
-
-ppi = nbm.P01.tolist()
-p_ra = nbm.PRA.tolist()
-p_zr = nbm.PZR.tolist()
-p_pl = nbm.PPL.tolist()
-p_sn = nbm.PSN.tolist()
-
-
+# Now will start building a dictionary of products to plot
+# some products are only in a certain bulletin
+#   e.g., "nbm.X01" is hourly only, nbm.X06 is 6hourly and not in hourly product
 prods = {}
-prods['snow'] = {'data': sn01_list, 'color':(0.1, 0.1, 0.7, 0.7), 'ymin':0.0,'ymax':1.5, 'ylabel':'Snow\n(inches)' }
-prods['pop01'] = {'data': ppi, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':-5,'ymax':105, 'ylabel':'Precip\nChances\n(%)'}
-prods['qpf01'] = {'data': qp_list, 'color':(0.2, 0.8, 0.2, 0.7), 'ymin':0.0,'ymax':0.50,'ylabel':'Precip\nAmount\n(inches)'}
-prods['t'] = {'data': t, 'color':(0.8, 0.0, 0.0, 0.8), 'ymin':t_min,'ymax':t_max, 'ylabel':'Temerature\nDewpoint' }
-prods['dp'] = {'data': dp, 'color':(0.0, 0.9, 0.1, 0.6), 'ymin':t_min,'ymax':t_max, 'ylabel':'Temerature\nDewpoint'  }
-prods['wspd'] = {'data': wspd, 'color':(0.5, 0.5, 0.5, 0.8),'ylabel':'Wind\nSpeed'}
-prods['wgst'] = {'data': wgst, 'color':(0.7, 0.7, 0.7, 0.7),'ylabel':'Wind\nSpeed'}
-prods['wdir'] = {'data': wdir, 'color':(0.7, 0.7, 0.7, 0.7),'ylabel':'Wind\nSpeed'}
-prods['sky'] = {'data': sky_list, 'color':(0.4, 0.4, 0.4, 0.8), 'ymin':-5,'ymax':105, 'yticks':[0,25,50,75,100], 'ylabel':'Sky cover\n(%)'}
-prods['vis'] = {'data': vis, 'color':(0.7, 0.7, 0.3, 1), 'ymin':-0.5,'ymax':8, 'ylabel':'Visibility\n(miles)'}
 
-products = ['t','wdir','vis','sky','pop01','qpf01','snow']
+try:
+    nbm.S01 = nbm.Q01.multiply(0.1)
+    s01_list = nbm.S01.tolist()
+    prods['s01_bar'] = {'data': s01_list, 'color':(0.1, 0.1, 0.7, 0.7), 'ymin':0.0,'ymax':1.01,'yticks':[0,0.25,0.5,0.75,1], 'ytick_labels':['0','1/4','1/2','3/4','1'], 'title':'Hourly snow\n(inches)' }
+    #bulletin lists hourly QPF in hundredths of an inch
+    nbm.Q01 = nbm.Q01.multiply(0.01)
+    q01_list = nbm.Q01.tolist()
+    prods['q01_bar'] = {'data': q01_list, 'color':qpf_color, 'ymin':0.0,'ymax':0.50,'yticks':[0.0,0.1,0.2,0.3], 'ytick_labels':['0','0.1','0.2','0.3'],'title':'Precip\nAmount\n(inches)'}
+    p01_list = nbm.P01.tolist()
+    prods['p01_bar'] = {'data': p01_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Precip\nChances\n(%)'}
+    products = ['t','wind','vis','sky_bar','q01_bar','p01_bar']
+except:
+    p06_list = nbm.P06.tolist()
+    s06_list = nbm.S06.tolist()
+    q06_list = nbm.Q06.tolist()
+
+    p06 = nbm.loc[:, ['P06']]
+    s06 = nbm.loc[:, ['S06']]
+    q06 = nbm.loc[:, ['Q06']]
+
+    prods['q06'] = {'data': q06, 'color':qpf_color, 'ymin':0.0,'ymax':0.50,'yticks':[0.0,0.1,0.2,0.3], 'ytick_labels':['0','0.1','0.2','0.3'],'title':'Precip\nAmount\n(inches)'}
+    prods['s06'] = {'data': s06, 'color':(0.1, 0.1, 0.7, 0.7), 'ymin':0.0,'ymax':3.01, 'yticks':[0,1,2,3], 'ytick_labels':['0','1','2','3'],'title':'6hr Snow\n(inches)' }
+    prods['p06'] = {'data': p06, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels,'title':'Precip\nChances\n(%)'}
+    prods['q06_bar'] = {'data': q06_list, 'color':qpf_color, 'ymin':0.0,'ymax':0.50,'yticks':[0.0,0.1,0.2,0.3], 'ytick_labels':['0','0.1','0.2','0.3'],'title':'Precip\nAmount\n(inches)'}
+    prods['s06_bar'] = {'data': s06_list, 'color':(0.1, 0.1, 0.7, 0.7), 'ymin':0.0,'ymax':3.01, 'yticks':[0,1,2,3], 'ytick_labels':['0','1','2','3'],'title':'6hr Snow\n(inches)' }
+    prods['p06_bar'] = {'data': p06_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels,'title':'Precip\nChances\n(%)'}
+    products = ['t','wind','vis','sky_bar','p06_bar','s06_bar']
+finally:
+    pass
+
+
+prods['wind'] = {'data': wspd, 'color':(0.5, 0.5, 0.5, 0.8),'title':'Wind\nSpeed\n& Gust'}
+
+prods['p_ra'] = {'data': p_ra, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Rain\n(%)'}
+prods['p_zr'] = {'data': p_zr, 'color':(0.6, 0.4, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob ZR\n(%)'}
+prods['p_pl'] = {'data': p_pl, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob PL\n(%)'}
+prods['t'] = {'data': t, 'color':(0.8, 0.0, 0.0, 0.8), 'ymin':dp_min,'ymax':t_max,'yticks':t_dp_yticks,'ytick_labels':t_dp_ytick_labels, 'title':'Temerature\nDewpoint' }
+prods['dp'] = {'data': dp, 'color':(0.0, 0.9, 0.1, 0.6), 'ymin':dp_min,'ymax':t_max,'yticks':t_dp_yticks,'ytick_labels':t_dp_ytick_labels, 'title':'Temerature\nDewpoint'  }
+prods['sky'] = {'data': sky, 'color':(0.4, 0.4, 0.4, 0.8), 'ymin':-5,'ymax':105,'yticks':[0,25,50,75,100],'ytick_labels':['0','25','50','75','100'], 'title':'Sky cover\n(%)'}
+prods['vis'] = {'data': vis, 'color':(0.7, 0.7, 0.3, 1), 'ymin':-0.5,'ymax':8,'yticks':[1, 3, 5, 7],'ytick_labels':['1','3','5', '>6'], 'title':'Visibility\n(miles)'}
+prods['p_ra_bar'] = {'data': p_ra_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Rain\n(%)'}
+prods['p_zr_bar'] = {'data': p_zr_list, 'color':(0.6, 0.4, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob ZR\n(%)'}
+prods['p_pl_bar'] = {'data': p_pl_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob PL\n(%)'}
+prods['t_bar'] = {'data': t_list, 'color':(0.8, 0.0, 0.0, 0.8), 'ymin':dp_min,'ymax':t_max,'yticks':t_dp_yticks,'ytick_labels':t_dp_ytick_labels, 'title':'Temerature\nDewpoint' }
+prods['dp_bar'] = {'data': dp_list, 'color':(0.0, 0.9, 0.1, 0.6), 'ymin':dp_min,'ymax':t_max,'yticks':t_dp_yticks,'ytick_labels':t_dp_ytick_labels, 'title':'Temerature\nDewpoint'  }
+prods['sky_bar'] = {'data': sky_list, 'color':(0.4, 0.4, 0.4, 0.8), 'ymin':-5,'ymax':105,'yticks':[0,25,50,75,100],'ytick_labels':['0','25','50','75','100'], 'title':'Sky cover\n(%)'}
+prods['vis_bar'] = {'data': vis_list, 'color':(0.7, 0.7, 0.3, 1), 'ymin':-0.5,'ymax':8,'yticks':[1, 3, 5, 7],'ytick_labels':['1','3','5', '>6'], 'title':'Visibility\n(miles)'}
 
 hours = mdates.HourLocator()
 myFmt = DateFormatter("%d%h")
@@ -239,75 +314,51 @@ fig, axes = plt.subplots(len(products),1,figsize=(16,10),sharex=True,subplot_kw=
 #fig, axes = plt.subplots(len(products),1,figsize=(16,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
 plt.subplots_adjust(bottom=0.1, left=0.25, top=0.9)
 plt.suptitle('NBM hourly Guidance - ' + station_name + '\n' + start_time.strftime('%B %d, %Y -- %HZ'))
-#plt.suptitle('NBM hourly Guidance - KGRR')
+
+
 for y,a in zip(products,axes.ravel()):
     a.xaxis.set_major_locator(hours)
     a.xaxis.set_major_formatter(myFmt)
-    a.yaxis.set_label_coords(-0.08,0.30)
+    a.yaxis.set_label_coords(-0.08,0.25)
 
     if y == 't':
         a.grid()
         a.get_xaxis().set_visible(False)
         gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.5)
         a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-        a.set_ylabel(prods['t']['ylabel'], rotation=0)
+        a.set_ylabel(prods[y]['title'], rotation=0)
         a.plot(prods['dp']['data'],linewidth=3,color=prods['dp']['color'])
         a.plot(prods['t']['data'],linewidth=3,color=prods['t']['color'])
 
-    if y == 'vis':
-        a.grid()
-        a.get_xaxis().set_visible(True)
-        #a.set_ylabel(prods[y]['ylabel'], rotation=0)
-        a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-        a.set(yticks = [1, 3, 5, 7], yticklabels = ["1","3","5", ">6"])
-
-        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.6)
-
-        a.plot(prods[y]['data'],linewidth=4,color=prods[y]['color'])
-
-    if y == 'wdir':
+    if y == 'wind':
+        plt.rc('font', size=12) 
         a.set_ylim(0,1)
-        a.set_ylabel(prods[y]['ylabel'], rotation=0)
+        a.set_ylabel(prods[y]['title'], rotation=0)
         a.get_xaxis().set_visible(False)
         gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.25)
 
         for s,d,g,p in zip(wspd_list,wdir_list,wgst_list,pd_series):
-            u,v = u_v_components(d,s)
-            a.barbs(p, 0.6, u, v, length=8, color=[0,0,1,0.9], pivot='middle')
-            a.text(p, 0.2, f'{g}',horizontalalignment='center',color=[0,0,1,0.9])
-         
-    if y == 'pop01':
+            u,v,dx,dy = u_v_components(d,s)
+            a.barbs(p, 0.75, u, v, length=7, color=[0,0,1,0.9], pivot='middle')
+            a.text(p, 0.3, f'{s}',horizontalalignment='center',color=[0,0,1,0.9])
+            a.text(p, 0.1, f'{g}',horizontalalignment='center',color=[0.6,0,1,0.6])
+            
+    # these are dataframe slices that use matplotlib plot to create time series
+    if y in ['p01','p06','p_zr','p_pl','sky','vis']:
         gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
         a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
         a.plot(prods[y]['data'],color=prods[y]['color'])
+        a.set_ylabel(prods[y]['title'], rotation=0)
+        a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
+
+    # these are lists that use matplotlib bar to create bar graphs
+    if y in ['p01_bar','q01_bar','s01_bar','p06_bar','s06_bar', 'sky_bar','p_zr_bar','p_sn_bar','p_pl_bar','vis_bar']:
+        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
+        a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
         a.bar(pd_series,prods[y]['data'],width=1/25, align="edge",color=prods[y]['color'])
-        a.set_ylabel(prods[y]['ylabel'], rotation=0)
-        a.set(yticks = [0, 20, 40, 60, 80, 100], yticklabels = ["0","20", "40","60","80","100"])
+        a.set_ylabel(prods[y]['title'], rotation=0)
+        a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
 
-    if y == 'snow':
-        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
-        a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-        a.plot(prods[y]['data'],color=prods[y]['color'])
-        a.bar(pd_series,prods[y]['data'],width=1/25, align="edge",color=prods[y]['color'])
-        a.set_ylabel(prods[y]['ylabel'], rotation=0)
-        a.set(yticks = [0, 0.25, 0.5, 0.75, 1], yticklabels = ["0","0.25", "0.5","0.75","1"])
-
-
-    if y == 'sky':
-        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
-        a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-        a.plot(prods[y]['data'],color=prods[y]['color'])
-        a.bar(pd_series,prods[y]['data'],width=1/26, align="edge",color=prods[y]['color'])
-        a.set_ylabel(prods[y]['ylabel'], rotation=0)
-        a.set(yticks = [0, 20, 40, 60, 80, 100], yticklabels = ["0","20", "40","60","80","100"])
-
-    if y == 'qpf01':
-        gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
-        a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-        a.plot(prods[y]['data'],color=prods[y]['color'])
-        a.bar(pd_series,prods[y]['data'],width=1/25, align="edge",color=prods[y]['color'])
-        a.set_ylabel(prods[y]['ylabel'], rotation=0)
-        a.set(yticks = qp_yticks, yticklabels = qp_ylabels)
-
-image_dst_path = os.path.join(image_dir,'GRR_NBM.png')
+image_file = station_name + '_NBM_' + bulletin_type + '.png'
+image_dst_path = os.path.join(image_dir,image_file)
 plt.savefig(image_dst_path,format='png')
