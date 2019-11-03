@@ -152,6 +152,9 @@ try:
         image_dir = os.path.join('/var/www/html/radar','images')
     except:
         image_dir = os.path.join('/data','images')
+    raw_nbm_file = os.path.join(base_dir,'nbm_raw.txt')
+    trimmed_nbm_file =  os.path.join(base_dir,'nbm_trimmed.txt')
+
 except:
     windows = True
     base_dir = 'C:/data'    
