@@ -136,6 +136,7 @@ def download_nbm_bulletin(bulletin_type,twelve_hourly,path_check):
 def u_v_components(wdir, wspd):
     # since the convention is "direction from"
     # we have to multiply by -1
+    # If an arrow is drawn, it needs a dx of 2/(number of arrows) to fit in the row of arrows
     u = (math.sin(math.radians(wdir)) * wspd) * -1.0
     v = (math.cos(math.radians(wdir)) * wspd) * -1.0
     dx = math.sin(math.radians(wdir)) * -0.4 / (12)
@@ -147,7 +148,10 @@ try:
     windows = False
     base_dir = '/data/scripts'
     sys.path.append('/data/scripts/resources')
-    image_dir = os.path.join('/var/www/html/radar','images')
+    try:
+        image_dir = os.path.join('/var/www/html/radar','images')
+    except:
+        image_dir = os.path.join('/data','images')
 except:
     windows = True
     base_dir = 'C:/data'    
@@ -175,12 +179,9 @@ import requests
 from datetime import datetime, timedelta
 
 
-
-
-
-not_downloaded = False
-#bulletin_type = 'short'
-bulletin_type = 'hourly'
+not_downloaded = True
+bulletin_type = 'short'
+#bulletin_type = 'hourly'
 
 for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
 
@@ -194,10 +195,11 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
 
     
     if bulletin_type == 'short':
-        products = ['t','wind','vis','sky_bar','p06_bar','s06_bar']
+        products = ['t','wind','vis','sky_bar','p06_bar','q06_bar', 's06_bar']
+
     elif bulletin_type == 'hourly':
-        products = ['t','wind','vis','sky_bar','p01_bar','s01_bar']
-    
+        products = ['t','wind','vis','sky_bar','ra_01_bar','sn_01_bar']
+        #products = ['t','wind','vis','sky_bar','p01_bar','p_ra_bar','ra_01_bar','q01_bar','p_sn_bar','sn_01_bar','s01_bar']    
     
     # passing 'just_path' to this function only returns raw_file_path
     # without downloading anything
@@ -352,7 +354,7 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
         prods['ra_01_bar'] = {'data': ra_01_list, 'color':(0.6, 0.6, 0.3, 0.7), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nRain (%)'}
         prods['sn_01_bar'] = {'data': sn_01_list, 'color':(0.6, 0.3, 0.6, 0.7), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nSnow(%)'}
 
-        products = ['t','wind','vis','sky_bar','p01_bar','p_ra_bar','ra_01_bar','q01_bar','p_sn_bar','sn_01_bar','s01_bar']
+
 
     except:
         p06_list = nbm.P06.tolist()
@@ -374,7 +376,7 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
         prods['q06_bar'] = {'data': q06_list, 'color':qpf_color, 'ymin':0.0,'ymax':0.50,'yticks':[0.0,0.1,0.2,0.3], 'ytick_labels':['0','0.1','0.2','0.3'],'title':'Precip\nAmount\n(inches)'}
         prods['s06_bar'] = {'data': s06_list, 'color':(0.1, 0.1, 0.7, 0.7), 'ymin':0.0,'ymax':prods['s06']['ymax'], 'yticks':prods['s06']['yticks'], 'ytick_labels':prods['s06']['yticks'],'title':'6hr Snow\n(inches)' }
         prods['p06_bar'] = {'data': p06_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels,'title':'Precip\nChances\n(%)'}
-        products = ['t','wind','vis','sky_bar','p06_bar','s06_bar']
+
     finally:
         pass
     
@@ -447,7 +449,7 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
             a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
     
         # these are lists that use matplotlib bar to create bar graphs
-        if y in ['p01_bar','q01_bar','s01_bar','p06_bar','s06_bar', 'sky_bar','p_zr_bar','p_sn_bar','p_pl_bar','p_ra_bar','sn_01_bar','ra_01_bar','vis_bar']:
+        if y in ['p01_bar','q01_bar','s01_bar','p06_bar','q06_bar','s06_bar', 'sky_bar','p_zr_bar','p_sn_bar','p_pl_bar','p_ra_bar','sn_01_bar','ra_01_bar','vis_bar']:
             gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
             a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
             if bulletin_type == 'short':
