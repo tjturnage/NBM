@@ -71,7 +71,8 @@ def download_directory_list():
     return time_list
         
 def download_nbm_bulletin(bulletin_type,path_check):
-    url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/"
+    #url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/"
+    url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/03/06/"
     if bulletin_type == 'hourly':
         searchStr = 'nbh'
         fname = 'nbm_raw_hourly.txt'
@@ -146,12 +147,11 @@ def u_v_components(wdir, wspd):
 try:
     os.listdir('/usr')
     windows = False
-    base_dir = '/data/scripts'
+    base_dir = '/data'
     sys.path.append('/data/scripts/resources')
-    try:
-        image_dir = os.path.join('/var/www/html/radar','images')
-    except:
-        image_dir = os.path.join('/data','images')
+    image_dir = os.path.join('/var/www/html/radar','images')
+    image_dir = os.path.join('/data','images')
+
     raw_nbm_file = os.path.join(base_dir,'nbm_raw.txt')
     trimmed_nbm_file =  os.path.join(base_dir,'nbm_trimmed.txt')
 
