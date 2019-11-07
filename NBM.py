@@ -72,36 +72,7 @@ def download_directory_list():
 
     return time_list
 
-"""       
-def download_nbm_bulletin(bulletin_type,path_check):
-    url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/"
-    url = "https://para.nomads.ncep.noaa.gov/pub/data/nccf/noaaport/blend/"
-    url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para' # /blend.20191105/07/text/blend_nbhtx.t07z
-    if bulletin_type == 'hourly':
-        searchStr1 = 'nbh'
-        searchStr2 = '21z'
-        fname = 'nbm_raw_hourly.txt'
-    elif bulletin_type == 'short':
-        searchStr1 = 'nbs'
-        searchStr2 = '21z'
-        fname = 'nbm_raw_short.txt'
-    page = requests.get(url)
-    soup = BeautifulSoup(page.content, 'html.parser')
 
-    for link in soup.find_all('a'):
-        fName = str(link.get('href'))
-        if searchStr1 in fName and searchStr2 in fName:
-            src = os.path.join(url,fName)
-            break
-
-    dst = os.path.join(base_dir,fname)
-    if path_check != 'just_path':
-        r = requests.get(src)
-        print('downloading ... ' + str(src))
-        open(dst, 'wb').write(r.content)
-    #print(dst)
-    return dst
-"""
 
 def download_nbm_bulletin(url,fname,path_check):
     dst = os.path.join(base_dir,fname)
@@ -109,7 +80,6 @@ def download_nbm_bulletin(url,fname,path_check):
         r = requests.get(url)
         print('downloading ... ' + str(url))
         open(dst, 'wb').write(r.content)
-    #print(dst)
     return dst
         
     
@@ -153,10 +123,10 @@ import math
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from my_functions import GridShader, plot_settings
+from my_functions import GridShader
 from matplotlib.dates import DateFormatter
 import matplotlib.dates as mdates
-from bs4 import BeautifulSoup
+#from bs4 import BeautifulSoup
 import requests
 from datetime import datetime, timedelta
 
@@ -164,7 +134,7 @@ from datetime import datetime, timedelta
 not_downloaded = False
 
 now = datetime.utcnow()
-now2= now - timedelta(hours=12)
+now2= now - timedelta(hours=3)
 ymd = now2.strftime('%Y%m%d')
 hour = now2.strftime('%H')
 
@@ -176,7 +146,7 @@ if bulletin_type == 'nbstx':
     fname = 'nbm_raw_short.txt'
 
 elif bulletin_type == 'nbhtx':
-    products = ['t','wind','vis','sky_bar','ra_01_bar','sn_01_bar']
+    products = ['t','wind','vis','sky_bar','ra_01']
     fname = 'nbm_raw_hourly.txt'
 
 # sample url = https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07/text/blend_nbhtx.t07z
@@ -191,10 +161,6 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     dt = re.compile('DT')
     
 
-    
-
-        #products = ['t','wind','vis','sky_bar','p01_bar','p_ra_bar','ra_01_bar','q01_bar','p_sn_bar','sn_01_bar','s01_bar']    
-    
     # passing 'just_path' to this function only returns raw_file_path
     # without downloading anything
 
@@ -239,15 +205,16 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     # flip table so times are rows to align with pandas
     nbm = nbm_old.transpose()
 
-    # after the flip column names are useless. Use the created column_list before the flip
+    # after the flip, column names are useless. Use the created column_list before the flip
     # to make a dictionary that replaces bad column names with the original, pre-flip column names
     old_column_names = nbm.columns.tolist()
     col_rename_dict = {i:j for i,j in zip(old_column_names,elements)}
     nbm.rename(columns=col_rename_dict, inplace=True)
     nbm.drop(nbm.index[1], inplace=True)
     
-    # Now that columns are created, there's now a redundant UTC line with hourly guidance.
-    # With the short guidance there is an irrelevant FHR line. Remove either.
+    # Now that columns names have been defined there is an extraneous line to remove
+    # -- With nbhtx (hourly guidance), remove the UTC line.
+    # -- With nbstx (short term guidance), remove the FHR line.
     # Then set the index with the pandas time series
     try:
         nbm.drop(['UTC'], inplace=True)
@@ -257,6 +224,11 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
         pass
 
     nbm.set_index(pd_series, inplace=True)
+
+    # Now will start building a dictionary of products to plot
+    # some products are only in a certain bulletin
+    #   e.g., "nbm.X01" is hourly only, nbm.X06 is 6hourly and not in hourly product
+    prods = {}
     
     # To plot time series lines  -- slice the dataframe with 'loc'
     # To plot a bar graph        -- convert the slice to a list.
@@ -305,56 +277,71 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     vis.clip(upper=7.0,inplace=True)
     vis_list = nbm.VIS.tolist()
     
-    # probabilities for rain (ra), freezing rain (zr), and sleet (pl)
-    p_ra = nbm.loc[:, ['PRA']]
-    p_ra_list = nbm.PRA.tolist()
-    p_sn = nbm.loc[:, ['PSN']]
-    p_sn_list = nbm.PRA.tolist()
-    p_zr = nbm.loc[:, ['PSN']]
-    p_zr_list = nbm.PZR.tolist()
-    p_pl = nbm.loc[:, ['PPL']]
-    p_pl_list = nbm.PPL.tolist()
-    
+    # conditional probabilities for rain (PRA), snow (PSN), freezing rain (PZR), sleet (PPL)
     # define y axis range and yticks/ylabels for any element that's probabilistic 
     prob_yticks = [0, 20, 40, 60, 80, 100]
     prob_ytick_labels = ["0","20", "40","60","80","100"]
     p_min = -5
     p_max = 105
+
+    p_ra = nbm.loc[:, ['PRA']]
+    p_ra_list = nbm.PRA.tolist()
+    prods['p_ra'] = {'data': p_ra, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Rain\n(%)'}
+    prods['p_ra_bar'] = {'data': p_ra_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Rain\n(%)'}
+
+
+    p_sn = nbm.loc[:, ['PSN']]
+    p_sn_list = nbm.PSN.tolist()
+    prods['p_sn'] = {'data': p_sn, 'color':(0.2, 0.2, 0.8, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Rain\n(%)'}
+    prods['p_sn_bar'] = {'data': p_sn_list, 'color':(0.2, 0.2, 0.8, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Snow\n(%)'}
+
+
+    p_zr = nbm.loc[:, ['PZR']]
+    p_zr_list = nbm.PZR.tolist()
+    prods['p_zr'] = {'data': p_zr, 'color':(0.6, 0.4, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob ZR\n(%)'}
+    prods['p_zr_bar'] = {'data': p_zr_list, 'color':(0.6, 0.4, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob ZR\n(%)'}
+
+    p_pl = nbm.loc[:, ['PPL']]
+    p_pl_list = nbm.PPL.tolist()
+    prods['p_pl'] = {'data': p_pl, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob PL\n(%)'}
+    prods['p_pl_bar'] = {'data': p_pl_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob PL\n(%)'}
+
+
     
     qpf_color = (0.1, 0.9, 0.1, 0.8)
     
-    # Now will start building a dictionary of products to plot
-    # some products are only in a certain bulletin
-    #   e.g., "nbm.X01" is hourly only, nbm.X06 is 6hourly and not in hourly product
-    prods = {}
+
     
     try:
+        # hourly snow amount, convert integers to tenths of an inch
         nbm.S01 = nbm.S01.multiply(0.1)
         s01_list = nbm.S01.tolist()
         prods['s01_bar'] = {'data': s01_list, 'color':(0.1, 0.1, 0.7, 0.7), 'ymin':0.0,'ymax':1.01,'yticks':[0,0.25,0.5,0.75,1], 'ytick_labels':['0','1/4','1/2','3/4','1'], 'title':'Hourly snow\n(inches)' }
-        #bulletin lists hourly QPF in hundredths of an inch
+
+        # hourly precip amount, convert integers to hundredths of an inch
         nbm.Q01 = nbm.Q01.multiply(0.01)
         q01_list = nbm.Q01.tolist()
         prods['q01_bar'] = {'data': q01_list, 'color':qpf_color, 'ymin':0.0,'ymax':0.50,'yticks':[0.0,0.1,0.2,0.3], 'ytick_labels':['0','0.1','0.2','0.3'],'title':'Precip\nAmount\n(inches)'}
-
-        #nbm.PRA = nbm.PRA.multiply(0.01)
-        p_ra_list = nbm.PRA.tolist()
-        prods['p_ra_bar'] = {'data': p_ra_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Rain\n(%)'}
-        p_sn_list = nbm.PSN.tolist()
-        prods['p_sn_bar'] = {'data': p_sn_list, 'color':(0.2, 0.2, 0.8, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Snow\n(%)'}
  
-        #  P01 is one hour PoP, aka PPI
+        #  P01 is one hour Probability for any type of precip, aka PPI
         p01_list = nbm.P01.tolist()
         prods['p01_bar'] = {'data': p01_list, 'color':(0.5, 0.5, 0.5, 0.5), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Precip\nChances\n(%)'}
 
         #multiply P01 by ProbRain to get absolute rain probability
         #multiply P01 to ProbSnow to get absolute snow probability
+        nbm['RA_01'] = nbm['P01'] * nbm['PRA']/100
+        nbm['SN_01'] = nbm['P01'] * nbm['PSN']/100
+
+        ra_01 = nbm.loc[:, ['RA_01']]
+        sn_01 = nbm.loc[:, ['SN_01']]
+
         ra_01_list = np.multiply(p01_list,p_ra_list)/100
         sn_01_list = np.multiply(p01_list,p_sn_list)/100
         
         prods['ra_01_bar'] = {'data': ra_01_list, 'color':(0.4, 0.7, 0.4, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nRain (%)'}
         prods['sn_01_bar'] = {'data': sn_01_list, 'color':(0.3, 0.3, 0.8, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nSnow(%)'}
-
+        prods['ra_01'] = {'data': ra_01, 'color':(0.4, 0.7, 0.4, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nRain (%)'}
+        prods['sn_01'] = {'data': sn_01, 'color':(0.3, 0.3, 0.8, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nSnow(%)'}
 
 
     except:
@@ -369,8 +356,7 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
         q06 = nbm.loc[:, ['Q06']]
         q06_list = nbm.Q06.tolist()
     
-        prods['p_ra'] = {'data': p_ra, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Rain\n(%)'}
-        prods['p_ra_bar'] = {'data': p_ra_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Rain\n(%)'}
+
         prods['q06'] = {'data': q06, 'color':qpf_color, 'ymin':0.0,'ymax':0.50,'yticks':[0.0,0.1,0.2,0.3], 'ytick_labels':['0','0.1','0.2','0.3'],'title':'Precip\nAmount\n(inches)'}
         prods['s06'] = {'data': s06, 'color':(0.1, 0.1, 0.7, 0.7), 'ymin':0.0,'ymax':3.01, 'yticks':[0,1,2,3], 'ytick_labels':['0','1','2','3','4','5','6'],'title':'6hr Snow\n(inches)' }
         prods['p06'] = {'data': p06, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels,'title':'Precip\nChances\n(%)'}
@@ -383,19 +369,12 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     
     
     prods['wind'] = {'data': wspd, 'color':(0.5, 0.5, 0.5, 0.8),'title':'Wind\nSpeed\n& Gust'}
-    
-
-    prods['p_sn'] = {'data': p_sn, 'color':(0.2, 0.2, 0.8, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Snow\n(%)'}
-    prods['p_zr'] = {'data': p_zr, 'color':(0.6, 0.4, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob ZR\n(%)'}
-    prods['p_pl'] = {'data': p_pl, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob PL\n(%)'}
     prods['t'] = {'data': t, 'color':(0.8, 0.0, 0.0, 0.8), 'ymin':t_dp_min,'ymax':t_dp_max,'yticks':t_dp_yticks,'ytick_labels':t_dp_ytick_labels, 'title':'Temerature\nDewpoint' }
     prods['dp'] = {'data': dp, 'color':(0.0, 0.9, 0.1, 0.6), 'ymin':t_dp_min,'ymax':t_dp_max,'yticks':t_dp_yticks,'ytick_labels':t_dp_ytick_labels, 'title':'Temerature\nDewpoint'  }
     prods['sky'] = {'data': sky, 'color':(0.6, 0.6, 0.6, 0.6), 'ymin':-5,'ymax':105,'yticks':[0,25,50,75,100],'ytick_labels':['0','25','50','75','100'], 'title':'Sky cover\n(%)'}
     prods['vis'] = {'data': vis, 'color':(0.7, 0.7, 0.3, 1), 'ymin':-0.5,'ymax':8,'yticks':[1, 3, 5, 7],'ytick_labels':['1','3','5', '>6'], 'title':'Visibility\n(miles)'}
 
-    prods['p_sn_bar'] = {'data': p_sn_list, 'color':(0.2, 0.2, 0.8, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Snow\n(%)'}
-    prods['p_zr_bar'] = {'data': p_zr_list, 'color':(0.6, 0.4, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob ZR\n(%)'}
-    prods['p_pl_bar'] = {'data': p_pl_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob PL\n(%)'}
+
     prods['t_bar'] = {'data': t_list, 'color':(0.8, 0.0, 0.0, 0.8), 'ymin':t_dp_min,'ymax':t_dp_max,'yticks':t_dp_yticks,'ytick_labels':t_dp_ytick_labels, 'title':'Temerature\nDewpoint' }
     prods['dp_bar'] = {'data': dp_list, 'color':(0.0, 0.9, 0.1, 0.6), 'ymin':t_dp_min,'ymax':t_dp_max,'yticks':t_dp_yticks,'ytick_labels':t_dp_ytick_labels, 'title':'Temerature\nDewpoint'  }
     prods['sky_bar'] = {'data': sky_list, 'color':(0.6, 0.6, 0.6, 0.6), 'ymin':-5,'ymax':105,'yticks':[0,25,50,75,100],'ytick_labels':['0','25','50','75','100'], 'title':'Sky cover\n(%)'}
@@ -427,6 +406,15 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
             a.set_ylabel(prods[y]['title'], rotation=0)
             a.plot(prods['dp']['data'],linewidth=3,color=prods['dp']['color'])
             a.plot(prods['t']['data'],linewidth=3,color=prods['t']['color'])
+
+        if y == 'ra_01':
+            a.grid()
+            a.get_xaxis().set_visible(False)
+            gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.5)
+            a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+            a.set_ylabel(prods[y]['title'], rotation=0)
+            a.plot(prods['ra_01']['data'],linewidth=2,color=prods['ra_01']['color'])
+            a.plot(prods['sn_01']['data'],linewidth=2,color=prods['sn_01']['color'])
     
         if y == 'wind':
             plt.rc('font', size=12) 
@@ -467,3 +455,34 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     image_file = station_name + '_NBM_' + bulletin_type + '.png'
     image_dst_path = os.path.join(image_dir,image_file)
     plt.savefig(image_dst_path,format='png')
+
+"""       
+def download_nbm_bulletin(bulletin_type,path_check):
+    url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/"
+    url = "https://para.nomads.ncep.noaa.gov/pub/data/nccf/noaaport/blend/"
+    url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para' # /blend.20191105/07/text/blend_nbhtx.t07z
+    if bulletin_type == 'hourly':
+        searchStr1 = 'nbh'
+        searchStr2 = '21z'
+        fname = 'nbm_raw_hourly.txt'
+    elif bulletin_type == 'short':
+        searchStr1 = 'nbs'
+        searchStr2 = '21z'
+        fname = 'nbm_raw_short.txt'
+    page = requests.get(url)
+    soup = BeautifulSoup(page.content, 'html.parser')
+
+    for link in soup.find_all('a'):
+        fName = str(link.get('href'))
+        if searchStr1 in fName and searchStr2 in fName:
+            src = os.path.join(url,fName)
+            break
+
+    dst = os.path.join(base_dir,fname)
+    if path_check != 'just_path':
+        r = requests.get(src)
+        print('downloading ... ' + str(src))
+        open(dst, 'wb').write(r.content)
+    #print(dst)
+    return dst
+"""
