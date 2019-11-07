@@ -2,8 +2,10 @@
 """
 Grabs NBM V3.2 houlry bulletins from:
 #https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/
-
-Bulletin Key:
+#https://para.nomads.ncep.noaa.gov/pub/data/nccf/noaaport/blend/blend_nbstx.t15z.tran
+https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07/text/blend_nbhtx.t07z
+    
+    Bulletin Key:
     https://www.weather.gov/mdl/nbm_textcard_v32#nbh
 Elements list here for reference:
 TMP DPT SKY WDR WSP GST P01 P06 Q01 DUR T01 PZR PSN PPL PRA S01 SLV I01
@@ -36,13 +38,13 @@ def dtList_nbm(dtLine,bulletin_type):
     dd = int(mm_dd_yr[1])
     yyyy = int(mm_dd_yr[-1])
     pTime = pd.Timestamp(yyyy,mm,dd,hr)
-    if bulletin_type == 'short':
-        idx2 = pd.date_range(pTime, periods=23, freq='3H')
+    if bulletin_type == 'nbstx':
+        idx2 = pd.date_range(pTime, periods=22, freq='3H')
         idx = idx2 + pd.offsets.Hour(hours_ahead)
         start_time = idx[0]
         end_time = idx[-1]
-    elif bulletin_type == 'hourly':
-        idx2 = pd.date_range(pTime, periods=26, freq='H')
+    elif bulletin_type == 'nbhtx':
+        idx2 = pd.date_range(pTime, periods=25, freq='H')
         idx = idx2[1:-1]
         start_time = idx2[0]
         end_time = idx2[-1]
@@ -69,22 +71,26 @@ def download_directory_list():
         time_list.append(dir_segment)
 
     return time_list
-        
+
+"""       
 def download_nbm_bulletin(bulletin_type,path_check):
-    #url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/"
-    url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/03/06/"
+    url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/"
+    url = "https://para.nomads.ncep.noaa.gov/pub/data/nccf/noaaport/blend/"
+    url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para' # /blend.20191105/07/text/blend_nbhtx.t07z
     if bulletin_type == 'hourly':
-        searchStr = 'nbh'
+        searchStr1 = 'nbh'
+        searchStr2 = '21z'
         fname = 'nbm_raw_hourly.txt'
     elif bulletin_type == 'short':
-        searchStr = 'nbs'
+        searchStr1 = 'nbs'
+        searchStr2 = '21z'
         fname = 'nbm_raw_short.txt'
     page = requests.get(url)
     soup = BeautifulSoup(page.content, 'html.parser')
 
     for link in soup.find_all('a'):
         fName = str(link.get('href'))
-        if searchStr in fName:
+        if searchStr1 in fName and searchStr2 in fName:
             src = os.path.join(url,fName)
             break
 
@@ -93,47 +99,20 @@ def download_nbm_bulletin(bulletin_type,path_check):
         r = requests.get(src)
         print('downloading ... ' + str(src))
         open(dst, 'wb').write(r.content)
+    #print(dst)
     return dst
-
-"""
-def download_nbm_bulletin(bulletin_type,twelve_hourly,path_check):
-    url = []
-    if twelve_hourly is False:
-        url = ['https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/']
-    else:
-        url_base = 'https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32'
-        directory_candidates = download_directory_list()
-        for d in directory_candidates:
-            url.append(os.path.join(url_base,d))
-            
-    if bulletin_type == 'hourly':
-        searchStr = 'nbh'
-        fname = 'nbm_raw_hourly.txt'
-    elif bulletin_type == 'short':
-        searchStr = 'nbs'
-        fname = 'nbm_raw_short.txt'
-    for u in url:
-        try:
-            page = requests.get(u)
-            soup = BeautifulSoup(page.content, 'html.parser')
-
-            for link in soup.find_all('a'):
-                fName = str(link.get('href'))
-            if searchStr in fName:
-                src = os.path.join(url,fName)
-                break
-            dst = os.path.join(base_dir,fname)
-            if not path_check:
-                r = requests.get(src)
-                print('downloading ... ' + str(src))
-                open(dst, 'wb').write(r.content)
-                return dst
-
-        except:
-            pass
 """
 
-
+def download_nbm_bulletin(url,fname,path_check):
+    dst = os.path.join(base_dir,fname)
+    if path_check != 'just_path':
+        r = requests.get(url)
+        print('downloading ... ' + str(url))
+        open(dst, 'wb').write(r.content)
+    #print(dst)
+    return dst
+        
+    
 def u_v_components(wdir, wspd):
     # since the convention is "direction from"
     # we have to multiply by -1
@@ -182,10 +161,26 @@ import requests
 from datetime import datetime, timedelta
 
 
-not_downloaded = True
-bulletin_type = 'short'
-#bulletin_type = 'hourly'
+not_downloaded = False
 
+now = datetime.utcnow()
+now2= now - timedelta(hours=12)
+ymd = now2.strftime('%Y%m%d')
+hour = now2.strftime('%H')
+
+bulletin_type = 'nbhtx'
+#bulletin_type = 'nbstx'
+
+if bulletin_type == 'nbstx':
+    products = ['t','wind','vis','sky_bar','p06_bar','q06_bar', 's06_bar']
+    fname = 'nbm_raw_short.txt'
+
+elif bulletin_type == 'nbhtx':
+    products = ['t','wind','vis','sky_bar','ra_01_bar','sn_01_bar']
+    fname = 'nbm_raw_hourly.txt'
+
+# sample url = https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07/text/blend_nbhtx.t07z
+url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.' + ymd + '/' + hour + '/text/blend_' + bulletin_type + '.t' + hour + 'z'
 for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
 
     column_list = []
@@ -197,21 +192,18 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     
 
     
-    if bulletin_type == 'short':
-        products = ['t','wind','vis','sky_bar','p06_bar','q06_bar', 's06_bar']
 
-    elif bulletin_type == 'hourly':
-        products = ['t','wind','vis','sky_bar','ra_01_bar','sn_01_bar']
         #products = ['t','wind','vis','sky_bar','p01_bar','p_ra_bar','ra_01_bar','q01_bar','p_sn_bar','sn_01_bar','s01_bar']    
     
     # passing 'just_path' to this function only returns raw_file_path
     # without downloading anything
 
     if not_downloaded:
-        raw_file_path = download_nbm_bulletin(bulletin_type,'hi')
+        raw_file_path = download_nbm_bulletin(url,fname,'hi')
         not_downloaded = False
-    
-    
+    else:
+        raw_file_path = download_nbm_bulletin(url,fname,'just_path')
+        
     dst = open(trimmed_nbm_file, 'w')
     with open(raw_file_path) as fp:  
         for line in fp:
@@ -230,42 +222,45 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
                     dst.write(line)             
             elif sol is not None and station_found:
                 dst.close()
-                break
-                
+                break 
+
     
-    elements = column_list[1:]
     nbm_old = None
     nbm = None
     
-    if bulletin_type == 'hourly': 
+    if bulletin_type == 'nbhtx': 
         nbm_old = pd.read_fwf(trimmed_nbm_file, widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
-    elif bulletin_type == 'short':
-        nbm_old = pd.read_fwf(trimmed_nbm_file, widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
-    
+        elements = column_list[1:]
+
+    elif bulletin_type == 'nbstx':
+        nbm_old = pd.read_fwf(trimmed_nbm_file, skiprows=[0],widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
+        elements = column_list[2:]
+
     # flip table so times are rows to align with pandas
     nbm = nbm_old.transpose()
-    
+
     # after the flip column names are useless. Use the created column_list before the flip
     # to make a dictionary that replaces bad column names with the original, pre-flip column names
     old_column_names = nbm.columns.tolist()
     col_rename_dict = {i:j for i,j in zip(old_column_names,elements)}
     nbm.rename(columns=col_rename_dict, inplace=True)
+    nbm.drop(nbm.index[1], inplace=True)
     
-    # Now that columns are created, there's now a redundant UTC line. Remove it.
+    # Now that columns are created, there's now a redundant UTC line with hourly guidance.
+    # With the short guidance there is an irrelevant FHR line. Remove either.
     # Then set the index with the pandas time series
     try:
         nbm.drop(['UTC'], inplace=True)
     except:
+        nbm.drop(['FHR'], inplace=True)
+    finally:
         pass
-    
+
     nbm.set_index(pd_series, inplace=True)
     
-    
-    # To plot time series lines:
-    #      slice the dataframe with 'loc'
-    # To plot a bar graph:
-    #      convert the slice to a list.
-    # Either can be done independently, but I usually doing both so I have the 
+    # To plot time series lines  -- slice the dataframe with 'loc'
+    # To plot a bar graph        -- convert the slice to a list.
+    # Either can be done independently, but I usually do both to have the later 
     # option of plotting either way.
     
     # TMP and DPT will go on same panel, so using min(DPT) and max(TMP) to define bounds
@@ -345,17 +340,20 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
         #nbm.PRA = nbm.PRA.multiply(0.01)
         p_ra_list = nbm.PRA.tolist()
         prods['p_ra_bar'] = {'data': p_ra_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Rain\n(%)'}
-        #prods['ppi_bar'] = {'data': ppi_list, 'color':(0.2,0.2,0.2,0.9), 'ymin':p_min,'ymax':p_max,'yticks':prob_ytick_labels, 'ytick_labels':prob_ytick_labels,'title':'Precip\nPotential'}
+        p_sn_list = nbm.PSN.tolist()
+        prods['p_sn_bar'] = {'data': p_sn_list, 'color':(0.2, 0.2, 0.8, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Snow\n(%)'}
  
+        #  P01 is one hour PoP, aka PPI
         p01_list = nbm.P01.tolist()
         prods['p01_bar'] = {'data': p01_list, 'color':(0.5, 0.5, 0.5, 0.5), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Precip\nChances\n(%)'}
 
-
+        #multiply P01 by ProbRain to get absolute rain probability
+        #multiply P01 to ProbSnow to get absolute snow probability
         ra_01_list = np.multiply(p01_list,p_ra_list)/100
         sn_01_list = np.multiply(p01_list,p_sn_list)/100
         
-        prods['ra_01_bar'] = {'data': ra_01_list, 'color':(0.6, 0.6, 0.3, 0.7), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nRain (%)'}
-        prods['sn_01_bar'] = {'data': sn_01_list, 'color':(0.6, 0.3, 0.6, 0.7), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nSnow(%)'}
+        prods['ra_01_bar'] = {'data': ra_01_list, 'color':(0.4, 0.7, 0.4, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nRain (%)'}
+        prods['sn_01_bar'] = {'data': sn_01_list, 'color':(0.3, 0.3, 0.8, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nSnow(%)'}
 
 
 
@@ -414,7 +412,7 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     
     
     for y,a in zip(products,axes.ravel()):
-        if bulletin_type == 'short':
+        if bulletin_type == 'nbstx':
             a.xaxis.set_major_locator(mdates.HourLocator(byhour=[0,6,12,18]))
         else:
             a.xaxis.set_major_locator(hours)
@@ -455,7 +453,7 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
         if y in ['p01_bar','q01_bar','s01_bar','p06_bar','q06_bar','s06_bar', 'sky_bar','p_zr_bar','p_sn_bar','p_pl_bar','p_ra_bar','sn_01_bar','ra_01_bar','vis_bar']:
             gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
             a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-            if bulletin_type == 'short':
+            if bulletin_type == 'nbstx':
                 if y == 'sky_bar':
                     a.bar(pd_series,prods[y]['data'],width=1/(25/3), align="edge",color=prods[y]['color'])
                 else:
