@@ -23,32 +23,32 @@ MHT TWD TWS HID
 import os
 import sys
 
-def dtList_nbm(dtLine,bulletin_type):
+def dtList_nbm(run_dt,bulletin_type):
     # returns both a pandas time series and a string for plotting title
-    mdyList = dtLine.split()
-    hrStr = mdyList[-2][0:2]
-    hr = int(hrStr)
-    if hr in [0,6,12,18]:
-        hours_ahead = 6
-    else:
-        hours_ahead = 6 - (hr%6)
-    mdy_group = mdyList[-3]
-    mm_dd_yr = mdy_group.split('/')
-    mm = int(mm_dd_yr[0])
-    dd = int(mm_dd_yr[1])
-    yyyy = int(mm_dd_yr[-1])
-    pTime = pd.Timestamp(yyyy,mm,dd,hr)
+    hr = run_dt.hour
     if bulletin_type == 'nbstx':
-        idx2 = pd.date_range(pTime, periods=22, freq='3H')
-        idx = idx2 + pd.offsets.Hour(hours_ahead)
-        start_time = idx[0]
-        end_time = idx[-1]
+        if (hr)%3 == 0:
+            hours_ahead = 6
+        elif (hr)%3 == 1:
+            hours_ahead = 5
+        elif (hr)%3 == 2:
+            hours_ahead = 4
+        fcst_hour_zero_utc = run_dt + timedelta(hours=hours_ahead)
+        fcst_hour_zero_local = fcst_hour_zero_utc - timedelta(hours=5)
+        pTime = pd.Timestamp(fcst_hour_zero_local)
+        idx = pd.date_range(pTime, periods=23, freq='3H')
+
     elif bulletin_type == 'nbhtx':
+        fcst_hour_zero_utc = run_dt + timedelta(hours=1)
+        fcst_hour_zero_local = fcst_hour_zero_utc - timedelta(hours=5)
+        #pTime = pd.Timestamp(fcst_hour_zero_utc)
+        pTime = pd.Timestamp(fcst_hour_zero_local)
         idx2 = pd.date_range(pTime, periods=25, freq='H')
         idx = idx2[1:-1]
-        start_time = idx2[0]
-        end_time = idx2[-1]
-    return idx,start_time,end_time
+    else:
+        pass
+   
+    return idx, idx[0], idx[-1]
 
 
 def round_values(x,places,direction):
@@ -131,44 +131,49 @@ import requests
 from datetime import datetime, timedelta
 
 
-not_downloaded = False
+download = False
+bulletin_type = 'nbhtx'
+bulletin_type = 'nbstx'
 
 now = datetime.utcnow()
-now2= now - timedelta(hours=3)
+now2 = now - timedelta(hours=3)
 ymd = now2.strftime('%Y%m%d')
 hour = now2.strftime('%H')
+# sample url = https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07/text/blend_nbhtx.t07z
+url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.' + ymd + '/' + hour + '/text/blend_' + bulletin_type + '.t' + hour + 'z'
 
-bulletin_type = 'nbhtx'
-#bulletin_type = 'nbstx'
+
+
 
 if bulletin_type == 'nbstx':
-    products = ['t','wind','vis','sky_bar','p06_bar','q06_bar', 's06_bar']
+    products = ['t','wind','vis','sky_bar','ra_06','q06_bar', 's06_bar']
     fname = 'nbm_raw_short.txt'
 
 elif bulletin_type == 'nbhtx':
-    products = ['t','wind','vis','sky_bar','ra_01']
+    products = ['t','wind','vis','ra_01','sky_bar']
     fname = 'nbm_raw_hourly.txt'
 
 # sample url = https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07/text/blend_nbhtx.t07z
 url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.' + ymd + '/' + hour + '/text/blend_' + bulletin_type + '.t' + hour + 'z'
+#for s in ['KAMN','BDWM4','KBELD','KRQB','KCAD']:
 for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
-
+#for s in ['KMQT']:
     column_list = []
     station_found = False
     station_name = s
     p = re.compile(station_name)
     s = re.compile('SOL')
     dt = re.compile('DT')
-    
+    ymdh = re.compile('[0-9]+/[0-9]+/[0-9]+\s+[0-9]+')
 
     # passing 'just_path' to this function only returns raw_file_path
     # without downloading anything
 
-    if not_downloaded:
+    if download:
         raw_file_path = download_nbm_bulletin(url,fname,'hi')
-        not_downloaded = False
-    else:
-        raw_file_path = download_nbm_bulletin(url,fname,'just_path')
+        download = False
+
+    
         
     dst = open(trimmed_nbm_file, 'w')
     with open(raw_file_path) as fp:  
@@ -178,7 +183,11 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
             dt_match = dt.search(line)
             if m is not None:
                 station_found = True
-                pd_series,start_time,end_time = dtList_nbm(line,bulletin_type)
+                dt_line = line
+                ymdh_match = ymdh.search(dt_line)
+                #ymdh_match
+                run_dt = datetime.strptime(ymdh_match[0], '%m/%d/%Y  %H%M')
+                pd_series,start_time,end_time = dtList_nbm(run_dt,bulletin_type)
             elif station_found and sol is None:
                 if dt_match is not None:
                     pass
@@ -210,7 +219,7 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     old_column_names = nbm.columns.tolist()
     col_rename_dict = {i:j for i,j in zip(old_column_names,elements)}
     nbm.rename(columns=col_rename_dict, inplace=True)
-    nbm.drop(nbm.index[1], inplace=True)
+    #nbm.drop(nbm.index[1], inplace=True)
     
     # Now that columns names have been defined there is an extraneous line to remove
     # -- With nbhtx (hourly guidance), remove the UTC line.
@@ -250,7 +259,8 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     
     t_dp_yticks = []
     t_dp_ytick_labels = []
-    for r in (-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100):
+    #for r in (-20,-15,-10,-5,0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100):
+    for r in (-20,-10,0,10,20,30,40,50,60,70,80,90,100):
         if r > tdp_min and r < tdp_max:
             t_dp_yticks.append(r)
             t_dp_ytick_labels.append(str(r))
@@ -306,12 +316,9 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     prods['p_pl'] = {'data': p_pl, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob PL\n(%)'}
     prods['p_pl_bar'] = {'data': p_pl_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob PL\n(%)'}
 
-
-    
+   
     qpf_color = (0.1, 0.9, 0.1, 0.8)
-    
-
-    
+      
     try:
         # hourly snow amount, convert integers to tenths of an inch
         nbm.S01 = nbm.S01.multiply(0.1)
@@ -345,8 +352,13 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
 
 
     except:
+        pass
+    
+    try:
         p06_list = nbm.P06.tolist()
+        prods['p06_bar'] = {'data': p06_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels,'title':'Precip\nChances\n(%)'}
         p06 = nbm.loc[:, ['P06']]
+        prods['p06'] = {'data': p06, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels,'title':'Precip\nChances\n(%)'}
 
         nbm.S06 = nbm.S06.multiply(0.1)
         s06 = nbm.loc[:, ['S06']]
@@ -355,14 +367,34 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
         nbm.Q06 = nbm.Q06.multiply(0.01)
         q06 = nbm.loc[:, ['Q06']]
         q06_list = nbm.Q06.tolist()
-    
+
+        #multiply P06 by ProbRain to get absolute rain probability
+        #multiply P06 to ProbSnow to get absolute snow probability
+        nbm['RA_06'] = nbm['P06'] * nbm['PRA']/100
+        nbm['SN_06'] = nbm['P06'] * nbm['PSN']/100
+
+        ra_06 = nbm.loc[:, ['RA_06']]
+        ra_06.dropna(inplace=True)
+        sn_06 = nbm.loc[:, ['SN_06']]
+        sn_06.dropna(inplace=True)
+
+        ra_06_list = np.multiply(p06_list,p_ra_list)/100
+        sn_06_list = np.multiply(p06_list,p_sn_list)/100
+    except:
+        print('no luck with absolute p06')
+
+    try:       
+        prods['ra_06_bar'] = {'data': ra_06_list, 'color':(0.4, 0.7, 0.4, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nRain (%)'}
+        prods['sn_06_bar'] = {'data': sn_06_list, 'color':(0.3, 0.3, 0.8, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nSnow(%)'}
+        prods['ra_06'] = {'data': ra_06, 'color':(0.4, 0.7, 0.4, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nRain (%)'}
+        prods['sn_06'] = {'data': sn_06, 'color':(0.3, 0.3, 0.8, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nSnow(%)'}
 
         prods['q06'] = {'data': q06, 'color':qpf_color, 'ymin':0.0,'ymax':0.50,'yticks':[0.0,0.1,0.2,0.3], 'ytick_labels':['0','0.1','0.2','0.3'],'title':'Precip\nAmount\n(inches)'}
         prods['s06'] = {'data': s06, 'color':(0.1, 0.1, 0.7, 0.7), 'ymin':0.0,'ymax':3.01, 'yticks':[0,1,2,3], 'ytick_labels':['0','1','2','3','4','5','6'],'title':'6hr Snow\n(inches)' }
-        prods['p06'] = {'data': p06, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels,'title':'Precip\nChances\n(%)'}
         prods['q06_bar'] = {'data': q06_list, 'color':qpf_color, 'ymin':0.0,'ymax':0.50,'yticks':[0.0,0.1,0.2,0.3], 'ytick_labels':['0','0.1','0.2','0.3'],'title':'Precip\nAmount\n(inches)'}
         prods['s06_bar'] = {'data': s06_list, 'color':(0.1, 0.1, 0.7, 0.7), 'ymin':0.0,'ymax':prods['s06']['ymax'], 'yticks':prods['s06']['yticks'], 'ytick_labels':prods['s06']['yticks'],'title':'6hr Snow\n(inches)' }
-        prods['p06_bar'] = {'data': p06_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels,'title':'Precip\nChances\n(%)'}
+    except:
+        print('no luck with prods')
 
     finally:
         pass
@@ -383,45 +415,65 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     hours = mdates.HourLocator()
     myFmt = DateFormatter("%d%h")
     myFmt = DateFormatter("%d%b\n%HZ")
-    myFmt = DateFormatter("%d\n%HZ")
+    myFmt = DateFormatter("%I\n%p")
     fig, axes = plt.subplots(len(products),1,figsize=(16,10),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
     #fig, axes = plt.subplots(len(products),1,figsize=(16,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
     plt.subplots_adjust(bottom=0.1, left=0.25, top=0.9)
-    plt.suptitle('NBM hourly Guidance - ' + station_name + '\n' + start_time.strftime('%B %d, %Y -- %HZ'))
+    plt.suptitle('NBM hourly Guidance - ' + station_name + '\n' + start_time.strftime('%B %d, %Y -- %I %p EST'))
     
     
     for y,a in zip(products,axes.ravel()):
         if bulletin_type == 'nbstx':
-            a.xaxis.set_major_locator(mdates.HourLocator(byhour=[0,6,12,18]))
+            #if offset == 
+            a.xaxis.set_major_locator(mdates.HourLocator(byhour=[7,19]))
+            a.xaxis.set_minor_locator(mdates.HourLocator(byhour=[1,4,10,13,16,22]))
+            a.xaxis.set_major_formatter(DateFormatter("%I\n%p\n%m/%d"))
+            a.xaxis.set_minor_formatter(DateFormatter("%I\n%p"))
         else:
             a.xaxis.set_major_locator(hours)
-        a.xaxis.set_major_formatter(myFmt)
+            a.xaxis.set_major_formatter(myFmt)
+
         a.yaxis.set_label_coords(-0.08,0.25)
-    
+        if start_time.hour > 16:
+            first_gray = True
+        else:
+            first_gray = False            
         if y == 't':
             a.grid()
             a.get_xaxis().set_visible(False)
-            gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.5)
+            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.5)            
             a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+            a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
             a.set_ylabel(prods[y]['title'], rotation=0)
-            a.plot(prods['dp']['data'],linewidth=3,color=prods['dp']['color'])
-            a.plot(prods['t']['data'],linewidth=3,color=prods['t']['color'])
+            a.plot(prods['dp']['data'],linewidth=2,color=prods['dp']['color'])
+            a.plot(prods['t']['data'],linewidth=2,color=prods['t']['color'])
 
         if y == 'ra_01':
             a.grid()
             a.get_xaxis().set_visible(False)
-            gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.5)
+            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.5) 
             a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+            a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
             a.set_ylabel(prods[y]['title'], rotation=0)
             a.plot(prods['ra_01']['data'],linewidth=2,color=prods['ra_01']['color'])
             a.plot(prods['sn_01']['data'],linewidth=2,color=prods['sn_01']['color'])
+
+        if y == 'ra_06':
+            a.grid()
+            a.get_xaxis().set_visible(False)
+            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.5) 
+            a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+            a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
+            a.set_ylabel(prods[y]['title'], rotation=0)
+            a.plot(prods['ra_06']['data'],linewidth=2,color=prods['ra_06']['color'])
+            a.plot(prods['sn_06']['data'],linewidth=2,color=prods['sn_06']['color'])
     
         if y == 'wind':
             plt.rc('font', size=12) 
             a.set_ylim(0,1)
             a.set_ylabel(prods[y]['title'], rotation=0)
             a.get_xaxis().set_visible(False)
-            gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.25)
+            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.5)
     
             for s,d,g,p in zip(wspd_list,wdir_list,wgst_list,pd_series):
                 u,v,dx,dy = u_v_components(d,s)
@@ -431,21 +483,22 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
                 
         # these are dataframe slices that use matplotlib plot to create time series
         if y in ['p01','p06','p_zr','p_pl','sky','vis']:
-            gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
+            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.5) 
             a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+            a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
             a.plot(prods[y]['data'],color=prods[y]['color'])
             a.set_ylabel(prods[y]['title'], rotation=0)
             a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
     
         # these are lists that use matplotlib bar to create bar graphs
         if y in ['p01_bar','q01_bar','s01_bar','p06_bar','q06_bar','s06_bar', 'sky_bar','p_zr_bar','p_sn_bar','p_pl_bar','p_ra_bar','sn_01_bar','ra_01_bar','vis_bar']:
-            gs = GridShader(a, facecolor="lightgrey", first=False, alpha=0.3)
+            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.5) 
             a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
             if bulletin_type == 'nbstx':
                 if y == 'sky_bar':
-                    a.bar(pd_series,prods[y]['data'],width=1/(25/3), align="edge",color=prods[y]['color'])
+                    a.bar(pd_series,prods[y]['data'],width=1/(50/3), align="center",color=prods[y]['color'])
                 else:
-                    a.bar(pd_series,prods[y]['data'],width=1/(25/6), align="edge",color=prods[y]['color'])            
+                    a.bar(pd_series,prods[y]['data'],width=1/(50/3), align="center",color=prods[y]['color'])            
             else:
                 a.bar(pd_series,prods[y]['data'],width=1/25, align="edge",color=prods[y]['color'])
 
@@ -456,33 +509,3 @@ for s in ['KAZO','KGRR','KMKG','KMOP','KCAD']:
     image_dst_path = os.path.join(image_dir,image_file)
     plt.savefig(image_dst_path,format='png')
 
-"""       
-def download_nbm_bulletin(bulletin_type,path_check):
-    url = "https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/"
-    url = "https://para.nomads.ncep.noaa.gov/pub/data/nccf/noaaport/blend/"
-    url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para' # /blend.20191105/07/text/blend_nbhtx.t07z
-    if bulletin_type == 'hourly':
-        searchStr1 = 'nbh'
-        searchStr2 = '21z'
-        fname = 'nbm_raw_hourly.txt'
-    elif bulletin_type == 'short':
-        searchStr1 = 'nbs'
-        searchStr2 = '21z'
-        fname = 'nbm_raw_short.txt'
-    page = requests.get(url)
-    soup = BeautifulSoup(page.content, 'html.parser')
-
-    for link in soup.find_all('a'):
-        fName = str(link.get('href'))
-        if searchStr1 in fName and searchStr2 in fName:
-            src = os.path.join(url,fName)
-            break
-
-    dst = os.path.join(base_dir,fname)
-    if path_check != 'just_path':
-        r = requests.get(src)
-        print('downloading ... ' + str(src))
-        open(dst, 'wb').write(r.content)
-    #print(dst)
-    return dst
-"""
