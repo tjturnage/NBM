@@ -7,15 +7,7 @@ https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07
     
     Bulletin Key:
     https://www.weather.gov/mdl/nbm_textcard_v32#nbh
-Elements list here for reference:
-TMP DPT SKY WDR WSP GST P01 P06 Q01 DUR T01 PZR PSN PPL PRA S01 SLV I01
 
-CIG VIS LCB
-VIS = visibility, 1/10th miles (rounded to nearest mile for values >= 1 mile)
-
-
-Ignoring these fire weather elements
-MHT TWD TWS HID
 """
 
 #https://www.weather.gov/mdl/nbm_text?ele=NBH&cyc=00&sta=KGRR&download=yes
@@ -23,7 +15,7 @@ MHT TWD TWS HID
 import os
 import sys
 
-def dtList_nbm(run_dt,bulletin_type):
+def dtList_nbm(run_dt,bulletin_type,tz_shift):
     """
       Create pandas date range of forecast valid times based on bulletin
       issuance time and bulletin type.
@@ -46,7 +38,7 @@ def dtList_nbm(run_dt,bulletin_type):
     """
 
     fcst_hour_zero_utc = run_dt + timedelta(hours=0)
-    fcst_hour_zero_local = fcst_hour_zero_utc - timedelta(hours=4)
+    fcst_hour_zero_local = fcst_hour_zero_utc - timedelta(hours=tz_shift)
     #pTime = pd.Timestamp(fcst_hour_zero_utc)
     pTime = pd.Timestamp(fcst_hour_zero_local)
     idx = pd.date_range(pTime, periods=27, freq='H')
@@ -69,9 +61,8 @@ def wind_chill(t,s):
         s   : wspd in MPH
     """    
     wc = 0.6215*t + 35.74 - 35.75*(s**0.16) + (0.4275*t)*(s**0.16)
-    #print(round(wc))
-    # time to frostbite 4=60, 3=30, 2=10, 1=5
-    print(wc)
+
+
     if wc >= -15:
         fbt = 4
 
@@ -91,7 +82,36 @@ def wind_chill(t,s):
             fbt = 3
                 
     return round(wc), fbt
-       
+
+
+def categorize(data_list,element):
+    """dat
+ [0,1,2,3,4,5,6],'major_yticks_labels':['0.00','0.01','0.05','0.10','0.2','0.3','0.5'], 
+        zr_list   : one hourly snow in hundredths
+    
+    """
+
+    vis_dict = {'0.0':0,'0.3':1,'0.6':2,'1':3,'2':4,'4':3,'6':6}
+    zr_dict = {'-0.1':0,'1':1,'8':2,'18':3,'28':4,'45':5}
+    sn_dict = {'-0.1':0,'0.05':1,'0.15':2,'0.33':3,'0.75':4,'1.5':5,'2.5':6}    
+
+    if element == 'sn':
+        data_dict = sn_dict
+    if element == 'zr':
+        data_dict = zr_dict    
+    if element == 'vis':
+        data_dict = vis_dict    
+
+    category_list = []  
+    for x in range(0,len(data_list)):
+        val = data_list[x]
+        for key in data_dict:
+            if val > float(key):
+                x_cat = data_dict[key]
+            
+        category_list.append(x_cat)
+
+    return category_list
 
 def download_nbm_bulletin(url,fname,path_check):
     dst = os.path.join(base_dir,fname)
@@ -156,42 +176,55 @@ now = datetime.utcnow()
 now2 = now - timedelta(hours=3)
 ymd = now2.strftime('%Y%m%d')
 hour = now2.strftime('%H')
-url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191107/15/text/blend_nbhtx.t15z'
-#url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.' + ymd + '/' + hour + '/text/blend_' + bulletin_type + '.t' + hour + 'z'
+#url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191107/15/text/blend_nbhtx.t15z'
+url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.' + ymd + '/' + hour + '/text/blend_' + bulletin_type + '.t' + hour + 'z'
 
 
+state2timezone = { 'AK': 'US/Alaska', 'AL': 'US/Central', 'AR': 'US/Central', 'AS': 'US/Samoa', 'AZ': 'US/Mountain', 'CA': 'US/Pacific', 'CO': 'US/Mountain', 'CT': 'US/Eastern', 'DC': 'US/Eastern', 'DE': 'US/Eastern', 'FL': 'US/Eastern', 'GA': 'US/Eastern', 'GU': 'Pacific/Guam', 'HI': 'US/Hawaii', 'IA': 'US/Central', 'ID': 'US/Mountain', 'IL': 'US/Central', 'IN': 'US/Eastern', 'KS': 'US/Central', 'KY': 'US/Eastern', 'LA': 'US/Central', 'MA': 'US/Eastern', 'MD': 'US/Eastern', 'ME': 'US/Eastern', 'MI': 'US/Eastern', 'MN': 'US/Central', 'MO': 'US/Central', 'MP': 'Pacific/Guam', 'MS': 'US/Central', 'MT': 'US/Mountain', 'NC': 'US/Eastern', 'ND': 'US/Central', 'NE': 'US/Central', 'NH': 'US/Eastern', 'NJ': 'US/Eastern', 'NM': 'US/Mountain', 'NV': 'US/Pacific', 'NY': 'US/Eastern', 'OH': 'US/Eastern', 'OK': 'US/Central', 'OR': 'US/Pacific', 'PA': 'US/Eastern', 'PR': 'America/Puerto_Rico', 'RI': 'US/Eastern', 'SC': 'US/Eastern', 'SD': 'US/Central', 'TN': 'US/Central', 'TX': 'US/Central', 'UT': 'US/Mountain', 'VA': 'US/Eastern', 'VI': 'America/Virgin', 'VT': 'US/Eastern', 'WA': 'US/Pacific', 'WI': 'US/Central', 'WV': 'US/Eastern', 'WY': 'US/Mountain', '' : 'US/Pacific', '--': 'US/Pacific' }
+time_shift_dict = {'US/Eastern':4,'US/Central':5,'US/Mountain':6,'US/Pacific':7,'US/Hawaii':7,'US/Alaska':8,'Pacific/Guam':9,'America/Puerto_Rico':3,'America/Virgin':3}
+
+    
 fin = 'C:/data/scripts/NBM/NBM_stations.txt'
 fout = 'C:/data/scripts/NBM/NBM_MI_stations.txt'
-station_info = []
+
+station_master = {}
 with open(fin,'r') as src:
     with open(fout,'w') as dst:
         for line in src:
             elements = line.split(',')
-            if elements[2] == 'MI' and float(elements[3]) < 44.5 and float(elements[4]) > -86.8:
-                stn = [elements[0],float(elements[3]),float(elements[4])]
-                station_info.append(elements[0])
-                station_info.append(float(elements[3]))
-                station_info.append(float(elements[4]))       
+            station = str(elements[0])
+            state = str(elements[2])
+            if state in state2timezone.keys():
+                lat = float(elements[3])
+                lon = float(elements[4])
+                utc_shift = time_shift_dict[state2timezone[state]]
+                #print(station,state,lat,lon,time_shift_dict[utc_shift])
+                #station_info[station] = ([('state', state) , ('utc_shift', time_shift_dict[utc_shift]) ,('lat', lat) , ('lon' , 20)] )
+                #station_master[station] = ([('state',state),('time_shift',utc_shift),('lat',lat),('lon',lon)])
+                station_master[station] = ({'state':state,'time_shift':utc_shift,'lat':lat,'lon':lon})
 
-stations = station_info[0::3]
-lats = station_info[1::3]
-lons = station_info[2::3]
-products = ['t_bar','wc_bar','time_fb_bar','wind','vis_bar','s01_bar']
-fname = 'nbm_raw_hourly.txt'
+            else:
+                utc_shift = 0
+
+        #print(station_master)
+
+#stations_to_plot = {}
+#for key in station_master:
+#    if station_master[key]['state'] == 'MT':
+
+#        print(station_master)
 
 
-#for s in ['KAMN','BDWM4','KBELD','KRQB','KCAD']:
-station_location = {}
-for sta in range(0,len(stations)):
-    station_location.update({stations[sta]:{'lat':lats[sta],'lon':lons[sta] }})
-
-station_data = {}
-
-for st in stations[14:15]:
+#products = ['t_bar','wc_bar','time_fb_bar','wind','vis_bar','s01_bar']
+products = ['t_bar','time_fb_bar','wind','vis_test','sn_test','zr_test']
+#fname = 'nbm_raw_hourly.txt'
+fname = 'C:/data/scripts/NBM/20191110/blend_nbhtx.t18z'
+#C:\data\scripts\NBM\20191109
+for station_name in ['KMOP']:
     #if s in ['KAZO','KGRR','KMKG','KMOP','KMKG','KBIV']:
     column_list = []
     station_found = False
-    station_name = st
+    utc_shift = station_master[station_name]['time_shift']
     p = re.compile(station_name)
     s = re.compile('SOL')
     dt = re.compile('DT')
@@ -214,14 +247,11 @@ for st in stations[14:15]:
                 dt_line = line
                 ymdh_match = ymdh.search(dt_line)
                 run_dt = datetime.strptime(ymdh_match[0], '%m/%d/%Y  %H%M')
-                idx,model_run_local = dtList_nbm(run_dt,bulletin_type) ######################################################3333333
-                print(idx)
+                idx,model_run_local = dtList_nbm(run_dt,bulletin_type,utc_shift) ######################################################3333333
                 start_time = idx[1]
-                print(start_time)
                 end_time = idx[-1]
-                print(end_time)
                 data_list = idx[1:-1]
-                print(data_list)
+
             elif station_found and sol is None:
                 if dt_match is not None:
                     pass
@@ -275,6 +305,8 @@ for st in stations[14:15]:
     # TMP and DPT will go on same panel, so using min(DPT) and max(TMP) to define bounds
 
     t_list = nbm.TMP.tolist()
+    t_list = np.asarray(t_list, dtype=np.float32)
+    t_shifted_list = t_list + 30
     dp_list = nbm.DPT.tolist()
     wdir_list = nbm.WDR.tolist()
 
@@ -286,12 +318,14 @@ for st in stations[14:15]:
     wgst_list = [round(x) for x in wgst_list]
     sky_list = nbm.SKY.tolist()
 
-    wind_chill_list = []
+    wc_list = []
     time_to_fb_list = []
     for chill in range(0,len(wspd_list)):
         wc,time_to_fb = wind_chill(t_list[chill],wspd_list[chill])
-        wind_chill_list.append(wc)
+        wc_list.append(wc)
         time_to_fb_list.append(time_to_fb)
+    wc_list = np.asarray(wc_list, dtype=np.float32)
+    wc_list = wc_list + 30
     
     # sometimes we have to convert units because they're in tenths or hundredths
     nbm.VIS = nbm.VIS.multiply(0.1)
@@ -307,8 +341,12 @@ for st in stations[14:15]:
 
 
     # hourly snow amount, convert integers to tenths of an inch
-    nbm.S01 = nbm.S01.multiply(0.1)
+    #nbm.S01 = nbm.S01.multiply(0.1)
     s01_list = nbm.S01.tolist()
+    sn_list = nbm.S01.tolist()
+
+    i01_list = nbm.I01.tolist()
+    zr_list = i01_list
 
     # hourly precip amount, convert integers to hundredths of an inch
     nbm.Q01 = nbm.Q01.multiply(0.01)
@@ -330,17 +368,29 @@ for st in stations[14:15]:
 
     qpf_color = (0.1, 0.9, 0.1, 0.8)
 
+    """
+    Uncomment to make synthetic data
+    
     t_list = np.arange(20,-5,-1)
-    wspd_list = np.arange(5,30,1)
-    vis_list = np.arange(10,0.1,-0.4)
+    t_shifted_list = t_list + 20
+    wspd_list_temp = np.arange(12,24.5,0.5)
+    wspd_list = np.rint(wspd_list_temp)
+    wdir_list = np.arange(140,43,-4)
+    vis_test = np.arange(10,0.1,-0.4)
+    vis_list = categorize(vis_test,'vis')
+    sn_test = np.arange(0,2.5,0.1)
+    sn_list = categorize(sn_test,'sn')
+    zr_test = np.arange(1,26,1)
+    zr_list = categorize(zr_test,'zr')
 
     wind_chill_list = []
     time_to_fb_list = []
     for chill in range(0,len(wspd_list)):
         wc,time_to_fb = wind_chill(t_list[chill],wspd_list[chill])
+        wc = wc + 70
         wind_chill_list.append(wc)
         time_to_fb_list.append(time_to_fb)
-    
+    """
     ### -----------------------------  Begin Plotting ---------------------------
 
     # conditional probabilities for rain (PRA), snow (PSN), freezing rain (PZR), sleet (PPL)
@@ -354,39 +404,62 @@ for st in stations[14:15]:
     prods['p_sn_bar'] = {'data': p_sn_list, 'color':(0.2, 0.2, 0.8, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Snow\n(%)'}
     prods['p_zr_bar'] = {'data': p_zr_list, 'color':(0.6, 0.4, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob ZR\n(%)'}
     prods['p_pl_bar'] = {'data': p_pl_list, 'color':(0.2, 0.8, 0.2, 0.6), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob PL\n(%)'}
-    prods['ra_01_bar'] = {'data': ra_01_list, 'color':(0.4, 0.7, 0.4, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nRain (%)'}
-    prods['sn_01_bar'] = {'data': sn_01_list, 'color':(0.3, 0.3, 0.8, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nSnow(%)'}
+    prods['ra_01_bar'] = {'data': ra_01_list, 'color':(0, 153/255, 0, 0.8), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Abs Prob\nRain (%)'}
+
     prods['p01_bar'] = {'data': p01_list, 'color':(0.5, 0.5, 0.5, 0.5), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Precip\nChances\n(%)'}
-    prods['s01_bar'] = {'data': s01_list, 'color':(0.1, 0.1, 0.7, 0.7), 'ymin':0.0,'ymax':1.01,'yticks':[0,0.25,0.5,0.75,1], 'ytick_labels':['0','1/4','1/2','3/4','1'], 'title':'Snow Accum' }
+
+
+    prods['s01_bar'] = {'data': s01_list, 'color':(0.1, 0.1, 0.7, 0.7),
+         'ymin':0.0,'ymax':1.01,'yticks':[0,0.25,0.5,0.75,1],
+         'ytick_labels':['0','1/4','1/2','3/4','1'], 'title':'Snow\nAccum' }
 
 
 
     prods['wind'] = {'data': wspd, 'color':(0.5, 0.5, 0.5, 0.8),'title':'Wind\nSpeed\n& Gust'}
 
 
-    prods['t_bar'] = {'data': t_list, 'color':(0.8, 0.0, 0.0, 0.8),
-         'ymin':-20,'ymax':40,'bottom':-20,
-         'major_yticks':[-15,0,15,32],'major_yticks_labels':['-15','0','15','32'],
-         'minor_yticks':[-20,-10,10],'minor_yticks_labels':['-20','-10','10'],
+    prods['t_bar'] = {'data': t_shifted_list, 'color':(0.9, 0.1, 0.1, 0.7),
+         'ymin':30,'ymax':80,'bottom':0,
+         'major_yticks':[30,45,62,75],'major_yticks_labels':['0','15','32','45'],
+         'minor_yticks':[60],'minor_yticks_labels':['30'],
          'title':'Temp (F)' }
 
-    prods['wc_bar'] = {'data': wind_chill_list, 'color':(0.2, 0.8, 0.2, 0.6),
-         'ymin':-35,'ymax':25,'bottom':-35,
-         'major_yticks':[-30,-15,0,15],'major_yticks_labels':['-30','-15','0','15'],
-         'minor_yticks':[-20,20],'minor_yticks_labels':['-20','20'],
+    prods['wc_bar'] = {'data': wc_list, 'color':(0, 0, 255/255, 0.3),
+         'ymin':20,'ymax':80,'bottom':0,
+         'major_yticks':[30,45,62,75],'major_yticks_labels':['0','15','32','45'],
+         'minor_yticks':[60],'minor_yticks_labels':['30'],
          'title':'Wind\nChill'}
 
-    prods['time_fb_bar'] = {'data': time_to_fb_list, 'color':(0.8, 0.8, 0.2, 0.6),
-         'ymin':0,'ymax':4,'yticks':[1,2,3,4],'ytick_labels':['5','10','30','60'],
+    prods['time_fb_bar'] = {'data': time_to_fb_list, 'color':(0.9, 0.9, 0.2, 0.8),
+         'ymin':1,'ymax':5.5,'yticks':[1,2,3,4,5],'ytick_labels':['5','10','30','60','>60'],
          'title':'Minutes to\nFrostbite'}
 
     prods['sky_bar'] = {'data': sky_list, 'color':(0.6, 0.6, 0.6, 0.6),
          'ymin':-5,'ymax':105,'yticks':[0,25,50,75,100],
          'ytick_labels':['0','25','50','75','100'], 'title':'Sky cover\n(%)'}
 
-    prods['vis_bar'] = {'data': vis_list, 'color':(0.7, 0.7, 0.3, 1),
-         'ymin':-0.5,'ymax':8,'yticks':[1, 3, 5, 7],
-         'ytick_labels':['1','3','5', '>6'], 'title':'Visibility\n(miles)'}
+#    prods['vis_bar'] = {'data': vis_list, 'color':(0.7, 0.7, 0.3, 1),
+#         'ymin':-0.5,'ymax':8,'yticks':[1, 3, 5, 7],
+#         'ytick_labels':['1','3','5', '>6'], 'title':'Visibility\n(miles)'}
+
+    prods['sn_01_bar'] = {'data': sn_01_list, 'color':(0.3, 0.3, 0.8, 0.8),
+         'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels,
+         'title':'Abs Prob\nSnow(%)'}
+
+    prods['sn_test'] = {'data': sn_list, 'color':(0,153/255,204/255, 0.7),
+         'ymin':0,'ymax':6,'bottom':0,
+         'major_yticks':[0,1,2,3,4,5,6],'major_yticks_labels':['0.0','0.1','0.2','0.5','1.0','2.0','3.0'],    
+         'title':'Snow\nAccum\n(in)' }
+
+    prods['zr_test'] = {'data': zr_list, 'color':(204/255,153/255,204/255, 0.7),
+         'ymin':0,'ymax':6,'bottom':0,
+         'major_yticks':[0,1,2,3,4,5,6],'major_yticks_labels':['0.01','0.03','0.05','0.10','0.25','0.5'],    
+         'title':'Ice\nAccum\n(in)' }
+
+    prods['vis_test'] = {'data': vis_list, 'color':(150/255,150/255,245/255, 0.6),
+         'ymin':0,'ymax':6,'bottom':0,
+         'major_yticks':[0,1,2,3,4,5,6],'major_yticks_labels':['0.00','0.25','0.50','1.00','2.00','3.00',' > 6'],    
+         'title':'Visibility\n(miles)' }
 
     prods['p_ra_bar'] = {'data': p_ra_list, 'color':(0.2, 0.8, 0.2, 0.6),
          'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Prob Rain\n(%)'}
@@ -400,12 +473,12 @@ for st in stations[14:15]:
     myFmt = DateFormatter("%d%h")
     myFmt = DateFormatter("%d%b\n%HZ")
     myFmt = DateFormatter("%I\n%p")
-    fig, axes = plt.subplots(len(products),1,figsize=(16,10),sharex=True,constrained_layout=True,subplot_kw={'xlim': (start_time,end_time)})
+    fig, axes = plt.subplots(len(products),1,figsize=(16,10),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
 
     #fig, axes = plt.subplots(len(products),1,figsize=(16,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
     plt.subplots_adjust(bottom=0.1, left=0.25, top=0.9)
     
-    plt.suptitle('NBM hourly Guidance - ' + station_name + '\n' + model_run_local.strftime('%B %d, %Y -- %I %p EST'))
+    plt.suptitle('Hourly Conditions - ' + station_name + '\n' + model_run_local.strftime('%B %d, %Y -- %I %p EST'))
     
     first_gray = True
     for y,a in zip(products,axes.ravel()):
@@ -453,6 +526,11 @@ for st in stations[14:15]:
             plt.rc('font', size=12) 
             a.set_ylim(0,1)
 
+            dx = 7/72.; dy = 0/72. 
+            offset = matplotlib.transforms.ScaledTranslation(dx, dy, fig.dpi_scale_trans)
+
+            # apply offset transform to all x ticklabels.
+
             a.set_ylabel(prods[y]['title'], rotation=0)
             a.get_xaxis().set_visible(False)
             a.get_yaxis().set_visible(False)
@@ -463,7 +541,9 @@ for st in stations[14:15]:
                 a.barbs(p, 0.7, u, v, length=7, color=[0,0,1,0.9], pivot='middle')
                 a.text(p, 0.28, f'{s}',horizontalalignment='center',color=[0,0,1,0.9])
                 a.text(p, 0.08, f'{g}',horizontalalignment='center',color=[0.6,0,1,0.6])
-                
+
+
+
         # these are dataframe slices that use matplotlib plot to create time series
         if y in ['p01','p06','p_zr','p_pl','sky','vis']:
             gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.5) 
@@ -474,21 +554,43 @@ for st in stations[14:15]:
             a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
 
         # specialized treatment for ranges and gridlines
-        if y in ['t_bar','wc_bar']:
-            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.3) 
+        if y in ['sn_test','zr_test','vis_test']:
+            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.1) 
             a.set_yticks(prods[y]['major_yticks'], minor=False)
+            a.set_yticklabels(prods[y]['major_yticks_labels'],minor=False)
             a.grid(which='major', axis='y')
             a.set_xticks(data_list)
             a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-            a.bar(data_list,prods[y]['data'],width=1/25, bottom=prods[y]['bottom'],  align="edge",color=prods[y]['color'])
+            a.bar(data_list,prods[y]['data'],width=1/25, align="edge",bottom=prods[y]['bottom'],color=prods[y]['color'])
 
             a.set_ylabel(prods[y]['title'], rotation=0)
             a.get_xaxis().set_visible(True)
 
+        if y in ['t_bar','wc_bar']:
+            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.2) 
+            a.set_yticks(prods[y]['major_yticks'], minor=False)
+            a.set_yticklabels(prods[y]['major_yticks_labels'],minor=False)
+            a.grid(which='major', axis='y')
+            a.set_xticks(data_list)
+            a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+            a.bar(data_list,prods['t_bar']['data'],width=1/25, align="edge",bottom=prods[y]['bottom'],color=prods['t_bar']['color'])
+            a.bar(data_list,prods['wc_bar']['data'],width=1/25, align="edge",bottom=prods[y]['bottom'],color=prods['wc_bar']['color'])
+            a.set_ylabel(prods[y]['title'], rotation=0)
+            a.get_xaxis().set_visible(True)
     
         # these are lists that use matplotlib bar to create bar graphs
-        if y in ['time_fb_bar','p01_bar','q01_bar','s01_bar','sky_bar','p_zr_bar','p_sn_bar','p_pl_bar','p_ra_bar','sn_01_bar','ra_01_bar','vis_bar']:
+        if y in ['p01_bar','q01_bar','s01_bar','sky_bar','p_zr_bar','p_sn_bar','p_pl_bar','p_ra_bar','sn_01_bar','ra_01_bar','vis_bar']:
             gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.3) 
+            a.set_xticks(data_list)
+            a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
+            a.bar(data_list,prods[y]['data'],width=1/25, align="edge",color=prods[y]['color'])
+
+            a.set_ylabel(prods[y]['title'], rotation=0)
+            a.get_xaxis().set_visible(True)
+            a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
+            
+        if y in ['time_fb_bar']:
+            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.0) 
             a.set_xticks(data_list)
             a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
             a.bar(data_list,prods[y]['data'],width=1/25, align="edge",color=prods[y]['color'])
