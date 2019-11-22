@@ -3,7 +3,7 @@
 Grabs NBM V3.2 houlry bulletins from:
 #https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/
 #https://para.nomads.ncep.noaa.gov/pub/data/nccf/noaaport/blend/blend_nbstx.t15z.tran
-https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07/text/blend_nbhtx.t07z
+zAhttps://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07/text/blend_nbhtx.t07z
     
     Bulletin Key:
     https://www.weather.gov/mdl/nbm_textcard_v32#nbh
@@ -51,27 +51,14 @@ def temperature_bounds(t_shifted_list,wind_chill_shifted_list):
     print(tick_list,tick_labels)
     return tick_list,tick_labels    
 
-def download_nbm_bulletin(url,fname,path_check):
+def download_nbm_bulletin(url,fname,download_flag):
     dst = os.path.join(base_dir,fname)
-    if path_check != 'just_path':
+    if download_flag:
         r = requests.get(url)
         print('downloading ... ' + str(url))
         open(dst, 'wb').write(r.content)
     return dst
 
-"""
-base_dir = 'C:/data/'        
-ymd = '20191111'
-for hr in range(0,23):
-    hour = str(hr)
-    if len(hour) < 2:
-        hour = '0' + hour
-    print(hour)
-    url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.' + ymd + '/' + hour + '/text/blend_nbhtx.t' + hour + 'z'
-    fname = 'ymd' + '_' + hour
-    fpath = os.path.join(base_dir,fname)
-    download_nbm_bulletin(url,fname,'hi')
-"""
     
 def u_v_components(wdir, wspd):
     # since the convention is "direction from"
@@ -124,7 +111,7 @@ import itertools, operator
 
 import matplotlib.transforms
 from reference_data import nbm_station_dict
-download = False
+
 bulletin_type = 'nbhtx'
 
 now = datetime.utcnow()
@@ -159,6 +146,10 @@ map_plot_stations = {}
 #for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4',
 #                     'KMEAR','KRQB','KMOP',
 #                     'KY70','KLAN',):
+
+
+download = False
+
 for key in mi_stations:
     #if s in ['KAZO','KGRR','KMKG','KMOP','KMKG','KBIV']:
     station_id = key
@@ -174,10 +165,10 @@ for key in mi_stations:
     ymdh = re.compile('[0-9]+/[0-9]+/[0-9]+\s+[0-9]+')
 
     if download:
-        raw_file_path = download_nbm_bulletin(url,fname,'hi')
+        raw_file_path = download_nbm_bulletin(url,fname,True)
         download = False
     else:
-        raw_file_path = download_nbm_bulletin(url,fname,'just_path')
+        raw_file_path = download_nbm_bulletin(url,fname,False)
         
     dst = open(trimmed_nbm_file, 'w')
     with open(raw_file_path) as fp:  
@@ -492,7 +483,7 @@ for key in mi_stations:
     first_gray = True
     bar_align = "center"   # "edge"
     bar_width = 1/35
-    fig, axes = plt.subplots(len(products),1,figsize=(15,12),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
+    fig, axes = plt.subplots(len(products),1,figsize=(15,12),sharex=False,subplot_kw={'xlim': (start_time,end_time)})
 
     #fig, axes = plt.subplots(len(products),1,figsize=(16,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
     plt.subplots_adjust(bottom=0.1, left=0.17, top=0.9)
@@ -523,16 +514,21 @@ for key in mi_stations:
         a.yaxis.set_label_coords(-0.112,0.25)
         a.xaxis.grid(True, linewidth=20, alpha = 0.2, zorder=1)  
         if y == 'abs_pra_ts':
-            a.grid()
-            a.get_xaxis().set_visible(False)
             gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=grid_alpha) 
+            a.set_yticks(prods[y]['yticks'], minor=False)
+            a.set_yticklabels(prods[y]['ytick_labels'],minor=False)
+            a.grid(which='major', axis='y')
+            a.get_xaxis().set_visible(True)
+            a.set_xticks(data_list)
             a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-            a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
             a.set_ylabel(prods[y]['title'], rotation=0)
-            a.plot(prods['pop1_ts']['data'],linewidth=3, zorder=10,color=prods['pop1_ts']['color'])
+
             a.plot(prods['abs_pra_ts']['data'],linewidth=2, zorder=10,color=prods['abs_pra_ts']['color'])
             a.plot(prods['abs_psn_ts']['data'],linewidth=2, zorder=10,color=prods['abs_psn_ts']['color'])
             a.plot(prods['abs_pzr_ts']['data'],linewidth=2, zorder=10,color=prods['abs_pzr_ts']['color'])
+            a.plot(prods['pop1_ts']['data'],linewidth=3, zorder=10,color=prods['pop1_ts']['color'])
+
+
 
         if y == 'wind':
             plt.rc('font', size=12) 
