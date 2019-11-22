@@ -374,7 +374,7 @@ for key in mi_stations:
     p_max = 105
 
     prods['pop1_bar'] = {'data': pop1_list, 'color':(0.5, 0.5, 0.5, 1), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Precip\nChances\n(%)'}
-    prods['pop1_ts'] = {'data': pop1_ts, 'color':(0.5, 0.5, 0.5, 1), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Precip\nChances\n(%)'}
+    prods['pop1_ts'] = {'data': pop1_ts, 'color':(0.5, 0.5, 0.5, 0.3), 'ymin':p_min,'ymax':p_max,'yticks':prob_yticks,'ytick_labels':prob_ytick_labels, 'title':'Precip\nChances\n(%)'}
 
     #-------------- Rain
         
@@ -512,7 +512,8 @@ for key in mi_stations:
         plt.setp( a.xaxis.get_majorticklabels(), ha="center",rotation=0 )
         
         a.yaxis.set_label_coords(-0.112,0.25)
-        a.xaxis.grid(True, linewidth=20, alpha = 0.2, zorder=1)  
+        a.xaxis.grid(True, linewidth=20, color=(0.96,0.96,0.96), zorder=1)  
+        #a.xaxis.grid(True, linewidth=20, alpha = 0.12, zorder=1)  
         if y == 'abs_pra_ts':
             gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=grid_alpha) 
             a.set_yticks(prods[y]['yticks'], minor=False)
@@ -521,7 +522,8 @@ for key in mi_stations:
             a.get_xaxis().set_visible(True)
             a.set_xticks(data_list)
             a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-            a.set_ylabel(prods[y]['title'], rotation=0)
+            this_title = 'Prob Precip\n(gray)\nProb Snow\n(blue)\n,Prob Ice\n(purple)\n'
+            a.set_ylabel(this_title, rotation=0)
 
             a.plot(prods['abs_pra_ts']['data'],linewidth=2, zorder=10,color=prods['abs_pra_ts']['color'])
             a.plot(prods['abs_psn_ts']['data'],linewidth=2, zorder=10,color=prods['abs_psn_ts']['color'])
