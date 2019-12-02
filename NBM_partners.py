@@ -194,7 +194,7 @@ for key in station_master:
 # 'time_fb_bar','vis_cat_bar','zr_cat_bar'
 products = ['abs_pra_ts','t_bar','wind','time_fb_bar','vis_cat_bar','s01_accum_bar']
 fname = 'nbm_raw_hourly.txt'
-fname = 'C:/data/scripts/NBM/20191110/blend_nbhtx.t18z'
+fname = 'C:/data/scripts/NBM/20191130/blend_nbhtx.t21z'
 #C:\data\scripts\NBM\20191109
 map_plot_stations = {}
 
@@ -434,9 +434,10 @@ for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
 
 
     qpf_color = (0.1, 0.9, 0.1, 1)
-    ra_color = (0.2, 0.8, 0.2, 1)
-    sn_color = (0.3, 0.3, 0.8, 1.0)
-    zr_color = (204/255,204/255,18/255, 1.0)
+    ra_color = (0, 153/255, 0, 1)
+    sn_color = (0, 153/255, 204/255, 1.0)
+    zr_color = (204/255,153/255,204/255, 1.0)
+    pl_color = (240/255,102/255,0,1.0)
     # conditional probabilities for rain (PRA), snow (PSN), freezing rain (PZR), sleet (PPL)
     # define y axis range and yticks/ylabels for any element that's probabilistic 
     prob_yticks = [0, 20, 40, 60, 80, 100]
@@ -514,16 +515,16 @@ for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
 
 
 
-    prods['wind'] = {'data': wspd, 'color':(0.5, 0.5, 0.5, 0.8),'ymin':0,'ymax':1,'yticks':[0,1],
-         'ytick_labels':[' ',' '],'title':'Wind Speed\nand Gusts\n(mph)'}
+    prods['wind'] = {'data': wspd, 'color':(0.5, 0.5, 0.5, 0.8),'ymin':0,'ymax':1,'yticks':[0.27,0.37,0.62],
+         'ytick_labels':['Gust (mph)','Speed (mph)','Wind\nDirection'],'title':''}# Wind Speed\nand Gusts\n(mph)'}
 
-    prods['t_bar'] = {'data': t_shifted_list, 'color':(0.7, 0.2, 0.2, 1.0),
+    prods['t_bar'] = {'data': t_shifted_list, 'color':(255/255, 0, 0, 1.0),
          'ymin':0,'ymax':80,'bottom':0,
          'yticks':[30,45,62,75],'ytick_labels':['0','15','32','45'],
          'minor_yticks':[60],'minor_yticks_labels':['30'],
          'title':'Temperature\nWind Chill\n(F)' }
 
-    prods['wc_bar'] = {'data': wind_chill_shifted_list, 'color':(0, 0, 255/255, 1.0),
+    prods['wc_bar'] = {'data': wind_chill_shifted_list, 'color':(0, 0, 204/255, 1.0),
          'ymin':0,'ymax':75,'bottom':0,
          'yticks':[30,45,62,75],'ytick_labels':['0','15','32','45'],
          'minor_yticks':[60],'minor_yticks_labels':['30'],
@@ -633,7 +634,7 @@ for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
             a.set_yticks(prods[y]['yticks'], minor=False)
             a.set_yticklabels(prods[y]['ytick_labels'],minor=False)
             a.get_yaxis().set_visible(True)
-            this_title = 'Wind Direction\n\nSpeed\n\nGusts\n\n(mph)'
+            this_title = ''
             a.set_ylabel(this_title, rotation=0)
             a.set_xticks(data_list)
             a.get_xaxis().set_visible(True)
@@ -649,8 +650,8 @@ for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
 
                 #a.quiverkey(q, X=0.0, Y=0.0, U=10,zorder=10)
                 #a.barbs(p, 0.7, u, v, length=7, color=[0,0,1,0.9], pivot='middle')
-                a.text(p, 0.25, f'{s}',horizontalalignment='center',color=[0,0,1,0.9])
-                a.text(p, 0.15, f'{g}',horizontalalignment='center',color=[0.6,0,1,0.6])
+                a.text(p, 0.35, f'{s}',horizontalalignment='center',color=[0,0,1,0.9])
+                a.text(p, 0.25, f'{g}',horizontalalignment='center',color=[0,0,102/255,1])
 
 
         # specialized treatment for ranges and gridlines
