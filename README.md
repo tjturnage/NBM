@@ -1,7 +1,6 @@
 # NBM
-National Blend of Models plotting efforts
-
-Grabs NBM V3.2 bulletins from:
+- National Blend of Models plotting efforts
+- Grabs NBM V3.2 bulletins from:
 https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/
 
 ## NBM_partners.py
