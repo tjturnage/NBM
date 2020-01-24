@@ -3,7 +3,7 @@
 Grabs NBM V3.2 houlry bulletins from:
 #https://sats.nws.noaa.gov/~downloads/nbm/bulk-textv32/current/
 #https://para.nomads.ncep.noaa.gov/pub/data/nccf/noaaport/blend/blend_nbstx.t15z.tran
-zAhttps://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07/text/blend_nbhtx.t07z
+#https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07/text/blend_nbhtx.t07z
     
     Bulletin Key:
     https://www.weather.gov/mdl/nbm_textcard_v32#nbh
@@ -48,14 +48,14 @@ def temperature_bounds(t_shifted_list,wind_chill_shifted_list):
     for t in range(0,len(tick_list)):
         tick_label = str(int(tick_list[t] - 40))
         tick_labels.append(tick_label)
-    print(tick_list,tick_labels)
+    #print(tick_list,tick_labels)
     return tick_list,tick_labels    
 
 def precip_upper_bounds(x01_accum_list,y_label_list):
     tick_list = []
     tick_label_list = []
     y_label_list_shift = y_label_list[1:]
-    print(y_label_list_shift)
+    #print(y_label_list_shift)
     max_val = np.max(x01_accum_list)
 
 
@@ -65,11 +65,11 @@ def precip_upper_bounds(x01_accum_list,y_label_list):
             tick_list.append(int(this_tick))
             tick_label_list.append(str(this_tick))
         
-    print(tick_list,tick_label_list)
+    #print(tick_list,tick_label_list)
     return tick_list,tick_label_list
 
 def download_nbm_bulletin(url,fname,download_flag):
-    dst = os.path.join(base_dir,fname)
+    dst = os.path.join(nbm_script_dir,fname)
     if download_flag:
         r = requests.get(url)
         print('downloading ... ' + str(url))
@@ -89,12 +89,6 @@ def u_v_components(wdir, wspd):
 
 def myround(x, base=2):
 
-#    if x <= 0.5:
-#        x = x + 0.1
-#        0.1 * round(x/0.1)
-#        tick_list = np.arange(0,x,0.1)
-#        ticks = tick_list
-#        labels = [str(a) for a in tick_list]
     if x <= 1:
         x = x + 0.25
         1 * round(x/1)
@@ -123,29 +117,47 @@ def myround(x, base=2):
     #print(ticks,labels)
     return ticks,labels
     
+def nbm_station_dict():
+    
+    fin = os.path.join(scripts_dir,'NBM','NBM_stationtable_20190819.csv')
+    station_master = {}
+    with open(fin,'r') as src:
+        for line in src:
+            elements = line.split(',')
+            station_id = str(elements[0])
+            station_name = str(elements[1])
+            state = str(elements[2])
+            if state in state2timezone.keys():
+                lat = float(elements[3])
+                lon = float(elements[4])
+                utc_shift = time_shift_dict[state2timezone[state]]
+                #print(station,state,lat,lon,time_shift_dict[utc_shift])
+                #station_info[station] = ([('state', state) , ('utc_shift', time_shift_dict[utc_shift]) ,('lat', lat) , ('lon' , 20)] )
+                #station_master[station] = ([('state',state),('time_shift',utc_shift),('lat',lat),('lon',lon)])
+                station_master[station_id] = ({'name':station_name,'state':state,'time_shift':utc_shift,'lat':lat,'lon':lon})
+    
+            else:
+                utc_shift = 0
+        
+        return station_master
 
 try:
     os.listdir('/usr')
-    windows = False
-    base_dir = '/data'
-    sys.path.append('/data/scripts/resources')
-    image_dir = os.path.join('/var/www/html/radar','images')
-    image_dir = os.path.join('/data','images')
-
-    raw_nbm_file = os.path.join(base_dir,'nbm_raw.txt')
-    trimmed_nbm_file =  os.path.join(base_dir,'nbm_trimmed.txt')
-
+    scripts_dir = '/data/scripts'
+    sys.path.append(os.path.join(scripts_dir,'resources'))
 except:
-    windows = True
-    base_dir = 'C:/data'    
-    image_dir = os.path.join(base_dir,'images','NBM')
-    raw_nbm_file = os.path.join(base_dir,'nbm_raw.txt')
-    trimmed_nbm_file =  os.path.join(base_dir,'nbm_trimmed.txt')
-    sys.path.append('C:/data/scripts/resources')
+    scripts_dir = 'C:/data/scripts'
+    sys.path.append(os.path.join(scripts_dir,'resources'))
 
+from reference_data import set_paths,state2timezone,time_shift_dict 
+data_dir,image_dir,archive_dir,gis_dir,py_call,placefile_dir = set_paths()
+
+nbm_script_dir = os.path.join(scripts_dir,'NBM')
+nbm_image_dir = os.path.join(image_dir,'NBM')
+    
 # ensure image directory is created
 try:
-    os.makedirs(image_dir)
+    os.makedirs(nbm_image_dir)
 except:
     pass
 
@@ -162,20 +174,31 @@ import matplotlib.dates as mdates
 import requests
 from datetime import datetime, timedelta
 import itertools, operator
-
 import matplotlib.transforms
-from reference_data import nbm_station_dict
+
 
 bulletin_type = 'nbhtx'
 
 now = datetime.utcnow()
-now2 = now - timedelta(hours=3)
+now1 = now - timedelta(hours=1)
+now2 = now - timedelta(hours=2)
 ymd = now2.strftime('%Y%m%d')
+ymd1 = now1.strftime('%Y%m%d')
 hour = now2.strftime('%H')
+hour1 = now1.strftime('%H')
+fname = 'nbm_raw_hourly.txt'
 #url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191107/15/text/blend_nbhtx.t15z'
 url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.' + ymd + '/' + hour + '/text/blend_' + bulletin_type + '.t' + hour + 'z'
+url1 = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.' + ymd1 + '/' + hour1 + '/text/blend_' + bulletin_type + '.t' + hour1 + 'z'
 
-fin = 'C:/data/scripts/NBM/NBM_stationtable_20190819.csv'
+try:
+    raw_file_path = download_nbm_bulletin(url1,fname,True)
+    url = url1
+except:
+    pass
+
+fin = os.path.join(scripts_dir,'NBM_stationtable_20190819.csv')
+trimmed_nbm_file = os.path.join(scripts_dir,'NBM','nbm_trimmed.txt')
 #fout = 'C:/data/scripts/NBM/NBM_MI_stations.txt'
 
 station_master = nbm_station_dict()
@@ -192,22 +215,26 @@ for key in station_master:
 # [q,s,i]01_accum_bar
 # abs_p[ra,sn,zr,pl]_[bar,ts]
 # 'time_fb_bar','vis_cat_bar','zr_cat_bar'
-products = ['abs_pra_ts','t_bar','wind','time_fb_bar','vis_cat_bar','s01_accum_bar']
+products = ['abs_pra_ts','t_bar','wind','q01_accum_bar','s01_accum_bar']
 fname = 'nbm_raw_hourly.txt'
-fname = 'C:/data/scripts/NBM/20191130/blend_nbhtx.t21z'
-#C:\data\scripts\NBM\20191109
 map_plot_stations = {}
 
 
 
-download = False
+download = True
 
-#for key in mi_stations:
-for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
-#                     'KMEAR','KRQB','KMOP','KMKG','KAMN','KBIV','KGRR',
-#                     'KY70','KLAN','KFPK','KTEW','KLWA','KPAWP','KAZO','KBTL','KRMY',
-#                     'KJXN','KBEH'):
-    #if s in ['KAZO','KGRR','KMKG','KMOP','KMKG','KBIV']:
+stations = ('KMBL','KCAD','KHTL','KLDM','KMEAR','BDWM4','KRQB','EVAM4','LEOM4','KMOP','KIKW','KMKG','KFFX','KENTC',
+            'KBELD','KEDMR','KAMN','KBIV','KHUDS','KGRR','KY70','KLAN','KRNP','KFNT','KFENN','BDLM4',
+            'KFPK','KTEW','KOZW','KPTK','KLWA','KPAWP','KAZO','KBTL','KRMY','KJXN','KARB','KBEH','KHAI',
+            'KIRS','KOEB','KADG') 
+
+for key in stations:
+#for key in ('KGRR','KMKG','KLAN','KAZO','KLWA','KLDM','KMOP','KJXN','KY70',
+#                     'KMEAR','KRQB','KAMN','KBIV','KCAD','KRNP','KOZW','KYIP',
+#                     'KFPK','KTEW','KPAWP','KRMY','KBTL',
+#                     'KPHN','RSCM4','KMBS','KTVC','KDTX','KGLR','KARB','KOEB','KDTW','KEMPR','KFNT','KFFX',
+#                     'KHTL','KENTC','KMBL','KMQT','KIRS'):
+
     station_id = key
     print(station_id)
     station_description = station_master[key]['name']
@@ -344,7 +371,6 @@ for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
     vis_list = nbm.VIS.tolist()
  
     
-
     # hourly precip amount, convert integers to hundredths of an inch
     nbm.Q01 = nbm.Q01.multiply(0.01)
     q01_amount_list = nbm.Q01.tolist()
@@ -460,10 +486,10 @@ for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
     prods['q01_amount_bar'] = {'data': q01_amount_list, 'color':qpf_color,
          'ymin':0.0,'ymax':0.50,
          'yticks':[0.0,0.1,0.2,0.3], 'ytick_labels':['0','0.1','0.2','0.3'],
-         'title':'Precip\nAmount\n(inches)'}    
+         'title':'Equivalent\nLiquid\n(inches)'}    
 
     prods['q01_accum_bar'] = {'data': q01_accum_list, 'color':qpf_color,
-         'ymin':0,'ymax':4.01,'bottom':0,
+         'ymin':0,'ymax':3.01,'bottom':0,
          'yticks':[0,0.5,1,1.5,2,3],'ytick_labels':['0','0.5','1.0','1.5','2.0','3.0'],    
          'title':'Rain\nAccum\n(in)' }
 
@@ -504,8 +530,8 @@ for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
          'ytick_labels':['0','.05','.10','.15',',20'], 'title':'Hourly\nIce' }
 
     prods['i01_accum_bar'] = {'data': i01_accum_list, 'color':zr_color,
-         'ymin':0,'ymax':1.01,'bottom':0,
-         'yticks':[0,0.1,0.25,0.5,0.75,1],'ytick_labels':['0','0.1','0.25','0.5','0.75','1'],    
+         'ymin':0,'ymax':0.76,'bottom':0,
+         'yticks':[0,0.1,0.25,0.5,0.75],'ytick_labels':['0','0.1','0.25','0.5','0.75'],    
          'title':'Ice\nAccum\n(in)' }
 
     prods['zr_cat_bar'] = {'data': zr_cat_list, 'color':zr_color,
@@ -521,14 +547,14 @@ for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
     prods['t_bar'] = {'data': t_shifted_list, 'color':(255/255, 0, 0, 1.0),
          'ymin':0,'ymax':80,'bottom':0,
          'yticks':[30,45,62,75],'ytick_labels':['0','15','32','45'],
-         'minor_yticks':[60],'minor_yticks_labels':['30'],
-         'title':'Temperature\nWind Chill\n(F)' }
+         'minor_yticks':[60],'minor_yticks_labels':['30']}#,
+         #'title':'Temperature\nWind Chill\n(F)' }
 
     prods['wc_bar'] = {'data': wind_chill_shifted_list, 'color':(0, 0, 204/255, 1.0),
          'ymin':0,'ymax':75,'bottom':0,
          'yticks':[30,45,62,75],'ytick_labels':['0','15','32','45'],
          'minor_yticks':[60],'minor_yticks_labels':['30'],
-         'title':'Wind\nChill'}
+         'title':'Temperature\n(red)\n\nWind Chill\n(blue)'}
 
     prods['time_fb_bar'] = {'data': time_to_fb_list, 'color':(0.9, 0.9, 0.2, 1.0),
          'ymin':0.5,'ymax':4.5,'yticks':[1,2,3,4],'ytick_labels':['under 5','5','15-30','30+'],
@@ -677,7 +703,7 @@ for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
             a.set_ylim(twc_tick_list[0],twc_tick_list[-1])
             a.bar(data_list,prods['t_bar']['data'],width=bar_width, zorder=10,align=bar_align,bottom=prods[y]['bottom'],color=prods['t_bar']['color'])
             a.bar(data_list,prods['wc_bar']['data'],width=bar_width, zorder=10,align=bar_align,bottom=prods[y]['bottom'],color=prods['wc_bar']['color'])
-            a.set_ylabel(prods[y]['title'], rotation=0)
+            a.set_ylabel(prods['wc_bar']['title'], rotation=0)
             a.get_xaxis().set_visible(True)
     
         # these are lists that use matplotlib bar to create bar graphs
@@ -703,8 +729,8 @@ for key in ('KMBL','KCAD','KHTL','KLDM','BDWM4','EVAM4'):
             a.set(yticks = prods[y]['yticks'], yticklabels = prods[y]['ytick_labels'])
     
     image_file = key + '_NBM_' + bulletin_type + '.png'
-    image_dst_path = os.path.join(image_dir,image_file)
+    image_dst_path = os.path.join(nbm_image_dir,image_file)
     #plt.show()
-    plt.savefig(image_dst_path,format='png')
+    plt.savefig(image_dst_path,format='png',bbox_inches='tight')
     plt.close()
 
