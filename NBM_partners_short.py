@@ -10,136 +10,9 @@ https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191105/07
 
 """
 
-#https://www.weather.gov/mdl/nbm_text?ele=NBH&cyc=00&sta=KGRR&download=yes
-
 import os
 import sys
 
-
-def round_values(x,places,direction):
-    amount = 10**places
-    if direction == 'up':
-        return int(math.ceil(x / float(amount))) * int(amount)
-    if direction == 'down':
-        return int(math.floor(x / float(amount))) * int(amount)
-
-
-def temperature_bounds(t_shifted_list,wind_chill_shifted_list):
-    max_val = np.max(t_shifted_list)
-    min_val = np.min(wind_chill_shifted_list)
-    high_list = np.arange(100,-40,-10)
-
-    for hi in range(0,(len(high_list))):
-        if high_list[hi] > max_val:
-            upper_limit = high_list[hi]
-        else:
-            break
-    upper_limit = upper_limit + 10     
-
-    low_list = np.arange(-40,100,10)
-    for lo in range(0,(len(low_list))):
-        if low_list[lo] < min_val:
-            lower_limit = low_list[lo]
-        else:
-            break
-    
-    tick_list = np.arange(lower_limit,upper_limit,10)
-    tick_labels = []
-    for t in range(0,len(tick_list)):
-        tick_label = str(int(tick_list[t] - 40))
-        tick_labels.append(tick_label)
-    print(tick_list,tick_labels)
-    return tick_list,tick_labels    
-
-def precip_upper_bounds(x01_accum_list,y_label_list):
-    tick_list = []
-    tick_label_list = []
-    y_label_list_shift = y_label_list[1:]
-    print(y_label_list_shift)
-    max_val = np.max(x01_accum_list)
-
-
-    for hi in range(0,(len(y_label_list_shift))):
-        this_tick = y_label_list[hi]
-        if int(this_tick) < max_val:
-            tick_list.append(int(this_tick))
-            tick_label_list.append(str(this_tick))
-        
-    print(tick_list,tick_label_list)
-    return tick_list,tick_label_list
-
-def download_nbm_bulletin(url,fname,download_flag):
-    dst = os.path.join(nbm_script_dir,fname)
-    if download_flag:
-        r = requests.get(url)
-        print('downloading ... ' + str(url))
-        open(dst, 'wb').write(r.content)
-    return dst
-
-    
-def u_v_components(wdir, wspd):
-    # since the convention is "direction from"
-    # we have to multiply by -1
-    # If an arrow is drawn, it needs a dx of 2/(number of arrows) to fit in the row of arrows
-    u = (math.sin(math.radians(wdir)) * wspd) * -1.0
-    v = (math.cos(math.radians(wdir)) * wspd) * -1.0
-
-    return u,v
-
-
-def myround(x, base=2):
-
-    if x <= 1:
-        x = x + 0.25
-        1 * round(x/1)
-        tick_list = np.arange(0,x,0.25)
-        ticks = tick_list
-        labels = [str(a) for a in tick_list]
-    elif x <= 2:
-        x = x + 0.5
-        1 * round(x/1)
-        tick_list = np.arange(0,x,0.5)
-        ticks = tick_list
-        labels = [str(a) for a in tick_list]
-    elif x <= 4:
-        x = x + 1
-        2 * round(x/2)
-        tick_list = np.arange(0,x,1)
-        ticks = [int(a) for a in tick_list]
-        labels = [str(a) for a in ticks]
-    else:
-        x = x + 2
-        2 * round(x/2)
-        tick_list = np.arange(0,x,2)        
-        ticks = [int(a) for a in tick_list]
-        labels = [str(a) for a in ticks]
-
-    #print(ticks,labels)
-    return ticks,labels
-    
-def nbm_station_dict():
-    
-    fin = os.path.join(scripts_dir,'NBM','NBM_stationtable_20190819.csv')
-    station_master = {}
-    with open(fin,'r') as src:
-        for line in src:
-            elements = line.split(',')
-            station_id = str(elements[0])
-            station_name = str(elements[1])
-            state = str(elements[2])
-            if state in state2timezone.keys():
-                lat = float(elements[3])
-                lon = float(elements[4])
-                utc_shift = time_shift_dict[state2timezone[state]]
-                #print(station,state,lat,lon,time_shift_dict[utc_shift])
-                #station_info[station] = ([('state', state) , ('utc_shift', time_shift_dict[utc_shift]) ,('lat', lat) , ('lon' , 20)] )
-                #station_master[station] = ([('state',state),('time_shift',utc_shift),('lat',lat),('lon',lon)])
-                station_master[station_id] = ({'name':station_name,'state':state,'time_shift':utc_shift,'lat':lat,'lon':lon})
-    
-            else:
-                utc_shift = 0
-        
-        return station_master
 
 try:
     os.listdir('/usr')
@@ -149,9 +22,8 @@ except:
     scripts_dir = 'C:/data/scripts'
     sys.path.append(os.path.join(scripts_dir,'resources'))
 
-from reference_data import set_paths,state2timezone,time_shift_dict 
-base_dir,image_dir,archive_dir,gis_dir,py_call,placefile_dir = set_paths()
-
+from reference_data import set_basic_paths
+data_dir,scripts_dir,image_dir = set_basic_paths()
 nbm_script_dir = os.path.join(scripts_dir,'NBM')
 nbm_image_dir = os.path.join(image_dir,'NBM')
 
@@ -168,24 +40,18 @@ from pandas.plotting import register_matplotlib_converters
 register_matplotlib_converters()
 import numpy as np
 import matplotlib.pyplot as plt
-from my_functions import GridShader,wind_chill, time_to_frostbite, dtList_nbm, categorize
+from my_nbm_functions import u_v_components, temperature_bounds, myround, wind_chill
+from my_nbm_functions import dtList_nbm, nbm_station_dict, categorize, GridShader, download_nbm_bulletin
 from matplotlib.dates import DateFormatter
 import matplotlib.dates as mdates
-import requests
 from datetime import datetime, timedelta
 import itertools, operator
 import matplotlib.transforms
 
 
 bulletin_type = 'nbstx'
+download_nbm_bulletin(bulletin_type,download=True)
 
-now = datetime.utcnow()
-now2 = now - timedelta(hours=1)
-ymd = now2.strftime('%Y%m%d')
-hour = now2.strftime('%H')
-#https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.20201121/12/text/blend_nbstx.t12z
-#url = 'https://para.nomads.ncep.noaa.gov/pub/data/nccf/com/blend/para/blend.20191107/15/text/blend_nbhtx.t15z'
-url = 'https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.' + ymd + '/' + hour + '/text/blend_' + bulletin_type + '.t' + hour + 'z'
 
 fin = os.path.join(scripts_dir,'NBM_stationtable_20190819.csv')
 if bulletin_type == 'nbhtx':
@@ -234,7 +100,10 @@ ymdh = re.compile('\d{2}/\d{2}/\d{4}(\s)+\d{2}')
 sol = re.compile('SOL')
 fhrs = re.compile('FHR')
 get_ymdh = True
-get_fhrs = True
+get_fhr_zero = True
+get_idx = True
+
+
 
 #for key in mi_stations:
 # KPHN, RSCM4, KMBS, KTVC, KDTX, KPTK, KPAWP, KGLR, KARB, KBTL, KRQB, KOEB, KDTW, KEMPR, KFPK, KFNT, KFFX
@@ -264,15 +133,21 @@ for key in (stations):
                 ymdh_match = ymdh.search(line)
                 if ymdh_match is not None:
                     run_ymdh = datetime.strptime(ymdh_match[0], '%m/%d/%Y  %H')
-                    idx,model_run_local = dtList_nbm(run_ymdh,'nbstx',utc_shift)
+                    #idx,model_run_local = dtList_nbm(run_ymdh,'nbstx',utc_shift)
                     get_ymdh = False
                     
-            if get_fhrs:
+            if get_fhr_zero:
                 fhrs_match = fhrs.search(line)
                 if fhrs_match is not None:
-                    fhrs_str = line.split(' ')[2:]
-                    fhrs = [int(x) for x in fhrs_str]
-                    get_fhrs = False                
+                    fhr_zero_shift = int(line.split(' ')[2:3])
+                    get_fhr_zero = False                
+
+            if get_ymdh == False and get_fhr_zero == False and get_idx == True:
+                fhr_zero = run_ymdh + timedelta(hours=fhr_zero_shift)
+                idx,model_run_local = dtList_nbm(fhr_zero,'nbstx',utc_shift)
+                start_time = idx[0]
+                end_time = idx[-1]
+                get_idx = False
 
             stn_match = stn.search(line)
             sol_match = sol.search(line)
@@ -395,7 +270,7 @@ for key in (stations):
     sn_accum_ticks = [0,1,2,4,6,8,10,12,14]
 
     s01_accum_ticks, s01_accum_tick_labels = myround(s01_accum_max)
-    s06_accum_ticks, s61_accum_tick_labels = myround(s06_accum_max)
+    s06_accum_ticks, s06_accum_tick_labels = myround(s06_accum_max)
     
     nbm.I01 = nbm.I01.multiply(0.01)
     i01_amount_list = nbm.I01.tolist()
@@ -673,20 +548,6 @@ for key in (stations):
         a.yaxis.set_label_coords(-0.112,0.25)
         a.xaxis.grid(True, linewidth=20, color=(0.96,0.96,0.96), zorder=1)  
         #a.xaxis.grid(True, linewidth=20, alpha = 0.12, zorder=1)  
-
-#        if y == 'abs_pra_ts':
-#            gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=grid_alpha) 
-#            a.set_yticks(prods[y]['yticks'], minor=False)
-#            a.set_yticklabels(prods[y]['ytick_labels'],minor=False)
-#            a.grid(which='major', axis='y')
-#            a.get_xaxis().set_visible(True)
-#            a.set_xticks(data_list)
-#            a.set_ylim(prods[y]['ymin'],prods[y]['ymax'])
-#            this_title = 'Prob Precip\n(gray)\nProb Snow\n(blue)\n,Prob Ice\n(purple)\n'
-#            a.set_ylabel(this_title, rotation=0)
-#
-#
-#            a.plot(prods['pop1_ts']['data'],linewidth=3, zorder=10,color=prods['pop1_ts']['color'])
 
 
         if y == 'abs_pra_ts':
