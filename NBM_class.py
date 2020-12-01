@@ -43,7 +43,7 @@ ymdh = re.compile('[0-9]+/[0-9]+/[0-9]+\s+[0-9]+')
 class NBM:
 
     
-    from my_nbm_functions import basic_elements, hourly_elements, short_elements, categorize, u_v_components
+    from my_nbm_functions import basic_elements, hourly_elements, short_elements, categorize
     from my_nbm_functions import temperature_bounds, prods, wind_chill, GridShader, nbm_station_dict
     station_master = nbm_station_dict(scripts_dir)
     def __init__(self, station, bulletin_type, download=True):
@@ -73,7 +73,7 @@ class NBM:
         
         self.nbm = None
         self.nbm_old = None
-        self.products = ['apra_bar','t_bar','wind','acqp_bar','acsn_bar','aczr_bar']
+        self.products = ['apra_ts','t_bar','wind','acqp_bar','acsn_bar','aczr_bar']
         self.master()
         
 
@@ -220,28 +220,51 @@ class NBM:
         self.nbm.rename(columns=self.col_rename_dict, inplace=True)
         return
 
+
+    # To plot time series lines  -- slice the dataframe with 'loc'
+    # To plot a bar graph        -- convert the slice to a list.
+    # Either can be done independently, but I usually do both to have the later 
+    # option of plotting either way.
     def expand_df(self):
 
         self.pop_bar = self.nbm.PoP.tolist()
+
         self.pop_ts = self.nbm['PoP'] 
+        self.nbm['POP_FILL'] = self.nbm.PoP.ffill()
+        self.pop_fill_ts =self.nbm.loc[:, ['POP_FILL']]
+        #self.pop_fill_ts[0] = 0.0
+        self.prods['pop_fill_ts']['data'] = self.pop_fill_ts
         self.prods['pop_ts']['data'] = self.pop_ts
         self.pop_bar = self.nbm.PoP.to_list()
         self.prods['pop_bar']['data'] = self.pop_bar
 
         
         self.nbm['APRA'] = self.nbm['PoP'] * self.nbm['PRA']/100
+        self.nbm['APRA_FILL'] = self.nbm.APRA.ffill()
+        self.apra_fill_ts = self.nbm.loc[:, ['APRA_FILL']]
+        #self.apra_fill_ts[0] = 0.0
+        self.prods['apra_fill_ts']['data'] = self.apra_fill_ts
+
         self.apra_ts = self.nbm['APRA']
         self.prods['apra_ts']['data'] = self.apra_ts
         self.apra_bar = self.nbm.APRA.to_list()
         self.prods['apra_bar']['data'] = self.apra_bar
 
         self.nbm['APSN'] = self.nbm['PoP'] * self.nbm['PSN']/100
+        self.nbm['APSN_FILL'] = self.nbm.APSN.ffill()
+        self.apsn_fill_ts = self.nbm.loc[:, ['APSN_FILL']]
+        #self.apsn_fill_ts[0] = 0.0
+        self.prods['apsn_fill_ts']['data'] = self.apsn_fill_ts
         self.apsn_ts = self.nbm['APSN']
         self.prods['apsn_ts']['data'] = self.apsn_ts
         self.apsn_bar = self.nbm.APSN.to_list()
         self.prods['apsn_bar']['data'] = self.apsn_bar
 
         self.nbm['APZR'] = self.nbm['PoP'] * self.nbm['PZR']/100
+        self.nbm['APZR_FILL'] = self.nbm.APZR.ffill()
+        self.apzr_fill_ts = self.nbm.loc[:, ['APZR_FILL']]
+        #self.apzr_fill_ts[0] = 0.0
+        self.prods['apzr_fill_ts']['data'] = self.apzr_fill_ts
         self.apzr_ts = self.nbm['APZR']
         self.prods['apzr_ts']['data'] = self.apzr_ts
         self.apzr_bar = self.nbm.APZR.to_list()
@@ -256,6 +279,24 @@ class NBM:
         self.prods['sn_bar']['data'] = self.sn_bar
 
         self.nbm['ACSN'] = self.nbm['SN'].cumsum()
+        self.acsn_max = self.nbm.ACSN.max()
+        if self.acsn_max > 7:
+            self.prods['acsn_bar']['ymax'] = 13
+            self.prods['acsn_bar']['yticks'] = [0,2,4,6,8,10,12] 
+            self.prods['acsn_bar']['ytick_labels'] = ['0','2','4','6','8','10','12']            
+        elif self.acsn_max > 4:
+            self.prods['acsn_bar']['ymax'] = 8
+            self.prods['acsn_bar']['yticks'] = [0,1,2,4,6,8] 
+            self.prods['acsn_bar']['ytick_labels'] = ['0','1','2','4','6','8']
+        elif self.acsn_max > 2:
+            self.prods['acsn_bar']['ymax'] = 4
+            self.prods['acsn_bar']['yticks'] = [0,1,2,3,4] 
+            self.prods['acsn_bar']['ytick_labels'] = ['0','1','2','3','4']
+        else:
+            self.prods['acsn_bar']['ymax'] = 2.5
+            self.prods['acsn_bar']['yticks'] = [0,0.5,1,2] 
+            self.prods['acsn_bar']['ytick_labels'] = ['0','0.5','1','2']            
+
         self.acsn_bar = self.nbm.ACSN.tolist()
         self.prods['acsn_bar']['data'] = self.acsn_bar
         
@@ -264,6 +305,37 @@ class NBM:
         self.prods['qp_bar']['data'] = self.qp_bar
 
         self.nbm['ACQP'] = self.nbm['QPF'].cumsum()
+        self.acqp_max = self.nbm.ACQP.max()
+        if self.acqp_max > 8:
+            self.prods['acqp_bar']['ymax'] = 11
+            self.prods['acqp_bar']['yticks'] = [0,1,2,4,6,8,10] 
+            self.prods['acqp_bar']['ytick_labels'] = ['0','1','2','4','6','8','10']            
+        elif self.acqp_max > 6:
+            self.prods['acqp_bar']['ymax'] = 6.5
+            self.prods['acqp_bar']['yticks'] = [0,1,2,4,6] 
+            self.prods['acqp_bar']['ytick_labels'] = ['0','1','2','4','6']
+        elif self.acqp_max > 4:
+            self.prods['acqp_bar']['ymax'] = 6.1
+            self.prods['acqp_bar']['yticks'] = [0,1,2,4,6] 
+            self.prods['acqp_bar']['ytick_labels'] = ['0','1','2','4','6']
+        elif self.acqp_max > 3:
+            self.prods['acqp_bar']['ymax'] = 4.1
+            self.prods['acqp_bar']['yticks'] = [0,1,2,3,4] 
+            self.prods['acqp_bar']['ytick_labels'] = ['0','1','2','3','4']
+        elif self.acqp_max > 2:
+            self.prods['acqp_bar']['ymax'] = 3.1
+            self.prods['acqp_bar']['yticks'] = [0,1,2,3] 
+            self.prods['acqp_bar']['ytick_labels'] = ['0','1','2','3']
+        elif self.acqp_max > 1:
+            self.prods['acqp_bar']['ymax'] = 2.1
+            self.prods['acqp_bar']['yticks'] = [0, 0.5, 1, 1.5, 2] 
+            self.prods['acqp_bar']['ytick_labels'] = ['0', '0.5', '1', '1.5', '2']
+        else:
+            self.prods['acqp_bar']['ymax'] = 1.1
+            self.prods['acqp_bar']['yticks'] = [0, 0.25, 0.5, 0.75, 1] 
+            self.prods['acqp_bar']['ytick_labels'] = ['0', '0.25', '0.50', '0.75', '1.00']            
+
+
         self.acqp_bar = self.nbm.ACQP.tolist()
         self.prods['acqp_bar']['data'] = self.acqp_bar
 
@@ -365,6 +437,14 @@ class NBM:
         self.vis_list = self.nbm.VIS.tolist()
         return
 
+    def u_v_components(self):
+        # since the convention is "direction from"
+        # we have to multiply by -1
+        # If an arrow is drawn, it needs a dx of 2/(number of arrows) to fit in the row of arrows
+        u = (math.sin(math.radians(self.this_wdir)) * self.this_wspd) * -1.0
+        v = (math.cos(math.radians(self.this_wdir)) * self.this_wspd) * -1.0
+        return u,v
+
     def plotting(self):
         self.gs = self.GridShader(self.a, facecolor="lightgrey", first=True, alpha=0.0) 
         self.a.set_yticks(self.prods[self.y]['yticks'], minor=False)
@@ -383,7 +463,12 @@ class NBM:
         
 
         bar_align = "center"   # "edge"
-        bar_width = 1/35
+        if self.bulletin_type == 'nbhtx':
+            reg_bar_width = 1/35
+            pop_bar_width = 1/32
+        else:
+            reg_bar_width = 4/35
+            pop_bar_width = 7/35            
         fig_set = {'4':(14,13),'5':(14,15),'6':(12,18)}
         fig, axes = plt.subplots(len(self.products),1,figsize=fig_set[str(len(self.products))],sharex=False,subplot_kw={'xlim': (self.idx[0],self.idx[-1])})
     
@@ -420,10 +505,19 @@ class NBM:
                 this_title = 'Probability of:\n\nAny Precip\n(gray dash)\n\nSnow (blue)\n\nIce (purple)'
                 self.a.set_ylabel(this_title, rotation=0)
     
-                self.a.plot(self.prods['apra_ts']['data'],linewidth=2, zorder=10,color=self.prods['apra_ts']['color'])
-                self.a.plot(self.prods['apsn_ts']['data'],linewidth=2, zorder=10,color=self.prods['apsn_ts']['color'])
-                self.a.plot(self.prods['apzr_ts']['data'],linewidth=2, zorder=10,color=self.prods['apzr_ts']['color'])
-                self.a.plot(self.prods['pop_ts']['data'],linewidth=6,linestyle=':', zorder=9,color=self.prods['pop_ts']['color'])
+                if self.bulletin_type == 'nbhtx':
+                    self.a.plot(self.prods['apra_ts']['data'],linewidth=2, zorder=10,color=self.prods['apra_ts']['color'])
+                    self.a.plot(self.prods['apsn_ts']['data'],linewidth=2, zorder=10,color=self.prods['apsn_ts']['color'])
+                    self.a.plot(self.prods['apzr_ts']['data'],linewidth=2, zorder=10,color=self.prods['apzr_ts']['color'])
+                    self.a.plot(self.prods['pop_ts']['data'],linewidth=6,linestyle=':', zorder=9,color=self.prods['pop_ts']['color'])
+
+                else:
+                    #print('plotting filled?')
+                    #print(self.prods['pop_fill_ts']['data'])
+                    self.a.plot(self.prods['apra_fill_ts']['data'],linewidth=2, zorder=10,color=self.prods['apra_fill_ts']['color'])
+                    self.a.plot(self.prods['apsn_fill_ts']['data'],linewidth=2, zorder=8,color=self.prods['apsn_fill_ts']['color'])
+                    self.a.plot(self.prods['apzr_fill_ts']['data'],linewidth=2, zorder=7,color=self.prods['apzr_fill_ts']['color'])
+                    self.a.plot(self.prods['pop_fill_ts']['data'],linewidth=6,linestyle=':', zorder=6,color=self.prods['pop_fill_ts']['color'])
     
 
             if self.y == 'apra_bar':
@@ -431,10 +525,10 @@ class NBM:
                 this_title = 'Probability of:\n\nAny Precip\n(gray dash)\n\nSnow (blue)\n\nIce (purple)'
                 self.a.set_ylabel(this_title, rotation=0)
     
-                self.a.bar(self.data_times,self.prods['pop_bar']['data'],width=bar_width, zorder=10,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods['pop_bar']['color'])
-                self.a.bar(self.data_times,self.prods['apra_bar']['data'],width=bar_width, zorder=8,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods['apra_bar']['color'])
-                self.a.bar(self.data_times,self.prods['apsn_bar']['data'],width=bar_width, zorder=7,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods['apsn_bar']['color'])
-
+                self.a.bar(self.data_times,self.prods['pop_bar']['data'],width=pop_bar_width, zorder=10,align='center',bottom=self.prods[self.y]['bottom'],color=self.prods['pop_bar']['color'])
+                self.a.bar(self.data_times,self.prods['apra_bar']['data'],width=pop_bar_width*0.80, zorder=10,align='center',bottom=self.prods[self.y]['bottom'],color=self.prods['apra_bar']['color'])
+                self.a.bar(self.data_times,self.prods['apsn_bar']['data'],width=pop_bar_width*-0.25, zorder=10,align='edge',bottom=self.prods[self.y]['bottom'],color=self.prods['apsn_bar']['color'])
+                self.a.bar(self.data_times,self.prods['apzr_bar']['data'],width=pop_bar_width*0.25, zorder=10,align='edge',bottom=self.prods[self.y]['bottom'],color=self.prods['apzr_bar']['color'])
                 #self.a.plot(self.prods['apra_bar']['data'],linewidth=2, zorder=7,color=self.prods['apra_bar']['color'])
                 #self.a.plot(self.prods['apsn_bar']['data'],linewidth=2, zorder=5,color=self.prods['apsn_bar']['color'])
                 #self.a.plot(self.prods['apzr_bar']['data'],linewidth=2, zorder=3,color=self.prods['apzr_bar']['color'])
@@ -458,23 +552,29 @@ class NBM:
                 self.a.get_xaxis().set_visible(True)
     
                 #gs = GridShader(a, facecolor="lightgrey", first=first_gray, alpha=0.5)
-                self.a.set_xticks(self.idx)    
-                for u,v,s,g,p in zip(self.u_norm,self.v_norm,self.wspd_bar,self.wgst_bar,self.data_times):
-                    #print(d,s)
 
-                    self.a.quiver(p, 0.6, u, v, scale=30, width=0.004,color=[0,0,1,0.9], zorder=10,pivot='middle')
+                self.a.set_xticks(self.idx)   
+                for s,d,g,p in zip(self.wspd_list,self.wdir_list,self.wgst_list,self.data_times):
+                    self.this_wspd = s
+                    self.this_wdir = d * 10
+                    #print(d,s)
+                    u,v = self.u_v_components()
+                    u_norm = u / np.sqrt(u**2 + v**2)
+                    v_norm = v / np.sqrt(u**2 + v**2)
+                    self.a.quiver(p, 0.6, u_norm, v_norm, scale=30, width=0.004,color=[0,0,1,0.9], zorder=10,pivot='middle')
     
                     #a.quiverkey(q, X=0.0, Y=0.0, U=10,zorder=10)
                     #a.barbs(p, 0.7, u, v, length=7, color=[0,0,1,0.9], pivot='middle')
                     self.a.text(p, 0.35, f'{s}',horizontalalignment='center',color=[0,0,1,0.9])
                     self.a.text(p, 0.25, f'{g}',horizontalalignment='center',color=[0,0,102/255,1])
-    
+
+                
     
             # specialized treatment for ranges and gridlines
             if self.y in ['acsn_bar','aczr_bar','acqp_bar','sn_bar','zr_bar','qp_bar']:
                 self.plotting()
-                self.a.bar(self.data_times,self.prods[self.y]['data'],width=bar_width, zorder=10,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods[self.y]['color'])
-    
+
+                self.a.bar(self.data_times,self.prods[self.y]['data'],width=pop_bar_width, zorder=10,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods[self.y]['color'])
                 self.a.set_ylabel(self.prods[self.y]['title'], rotation=0)
                 self.a.get_xaxis().set_visible(True)
     
@@ -483,8 +583,8 @@ class NBM:
                 tick_labels = self.prods['wc_bar']['ytick_labels']
                 self.plotting()
                 self.a.set_ylim(tick_list[0],tick_list[-1])
-                self.a.bar(self.data_times,self.prods['t_bar']['data'],width=bar_width, zorder=10,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods['t_bar']['color'])
-                self.a.bar(self.data_times,self.prods['wc_bar']['data'],width=bar_width, zorder=10,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods['wc_bar']['color'])
+                self.a.bar(self.data_times,self.prods['t_bar']['data'],width=reg_bar_width, zorder=10,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods['t_bar']['color'])
+                self.a.bar(self.data_times,self.prods['wc_bar']['data'],width=reg_bar_width, zorder=10,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods['wc_bar']['color'])
                 self.a.set_ylabel(self.prods['wc_bar']['title'], rotation=0)
                 self.a.get_xaxis().set_visible(True)
 
@@ -496,7 +596,7 @@ class NBM:
                 self.a.set_xticks(self.idx)
                 self.a.set_ylim(self.prods[self.y]['ymin'],self.prods[self.y]['ymax'])
                 #a.bar(data_list,prods[y]['data'],width=1/25, align="edge",color=prods[y]['color'])
-                self.a.bar(self.data_times,self.prods[self.y]['data'],width=bar_width, align="center",color=self.prods[self.y]['color'])
+                self.a.bar(self.data_times,self.prods[self.y]['data'],width=pop_bar_width, align="center",color=self.prods[self.y]['color'])
                 self.a.set_ylabel(self.prods[self.y]['title'], rotation=0)
                 self.a.get_xaxis().set_visible(True)
                 self.a.set(yticks = self.prods[self.y]['yticks'], yticklabels = self.prods[self.y]['ytick_labels'])
@@ -506,7 +606,7 @@ class NBM:
                 self.a.grid(which='major', axis='y')
                 self.a.set_xticks(self.idx)
                 self.a.set_ylim(self.prods[self.y]['ymin'],self.prods[self.y]['ymax'])
-                self.a.bar(self.data_times,self.prods[self.y]['data'],width=bar_width,  zorder=10,align=bar_align,color=self.prods[self.y]['color'])
+                self.a.bar(self.data_times,self.prods[self.y]['data'],width=reg_bar_width,  zorder=10,align=bar_align,color=self.prods[self.y]['color'])
     
                 self.a.set_ylabel(self.prods[self.y]['title'], rotation=0)
                 self.a.get_xaxis().set_visible(True)
@@ -520,5 +620,5 @@ class NBM:
         return
 
 
-test = NBM('KARB', 'nbstx', False)
+test = NBM('KCLE', 'nbstx', False)
 
