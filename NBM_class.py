@@ -12,7 +12,7 @@ element_dict = {'P01':'PoP','P06':'PoP',
                 'Q01':'QPF','Q06':'QPF',
                 'S01':'SN','S06':'SN',
                 'I01':'ZR','I06': 'ZR',
-                'T01':'TSTM', 'T03':'TSTM','T06':'TSTM'}
+                'T01':'TST', 'T03':'TST','T06':'TST'}
 
 
 import re
@@ -46,17 +46,19 @@ class NBM:
     from my_nbm_functions import basic_elements, hourly_elements, short_elements, categorize
     from my_nbm_functions import temperature_bounds, prods, wind_chill, GridShader, nbm_station_dict
     station_master = nbm_station_dict(scripts_dir)
-    def __init__(self, station, bulletin_type, download=True):
+    def __init__(self, station, bulletin_type, download=True, plot_flag=True):
         self.station = station   # single station
         self.station_description = self.station_master[self.station]['name']
         self.bulletin_type = bulletin_type
+        self.download = download
+        self.plot_flag = plot_flag
         if self.bulletin_type == 'nbhtx':
             self.elements = self.basic_elements + self.hourly_elements
             self.fcst_type = 'Hourly'
         else:
             self.elements = self.basic_elements + self.short_elements
             self.fcst_type = 'Short Term'            
-        self.download = download
+
         self.raw_file = f'nbm_raw_{self.bulletin_type}.txt'
         self.trimmed_file = f'nbm_trimmed_{self.bulletin_type}.txt'
         self.name = 'nbm'
@@ -73,7 +75,8 @@ class NBM:
         
         self.nbm = None
         self.nbm_old = None
-        self.products = ['apra_ts','t_bar','wind','acqp_bar','acsn_bar','aczr_bar']
+        self.products = ['apraf_ts','t_bar','wind','acqp_bar','acsn_bar','aczr_bar']
+        #self.products = ['apra_ts','t_bar','wind','acqp_bar', 'winter_bar']
         self.master()
         
 
@@ -83,8 +86,10 @@ class NBM:
         self.make_idx()
         self.create_df()
         self.expand_df()
-        self.plot()
-
+        if self.plot_flag:
+            self.plot()
+        if self.bulletin_type == 'nbhtx':
+            self.taf()
 
     def get_nbm(self):
         if self.download:
@@ -155,17 +160,17 @@ class NBM:
         self.fh0_local = self.fh0_utc - timedelta(hours=self.tz_shift)
 
     
-        pTime = pd.Timestamp(self.idx0_local)
+        pTime_local = pd.Timestamp(self.idx0_local)
         if self.bulletin_type == 'nbhtx':
-            self.idx = pd.date_range(pTime, periods=27, freq='H')
+            self.idx = pd.date_range(pTime_local, periods=27, freq='H')
             #self.idx6 = None
         else:
             #p6Time = pd.Timestamp(self.idx6_local)
             #self.idx6 = pd.date_range(p6Time, periods=8, freq='6H')
-            self.idx = pd.date_range(pTime, periods=25, freq='3H')
+            self.idx = pd.date_range(pTime_local, periods=25, freq='3H')
         
         self.data_times = self.idx[1:-1]
-        return
+        return self.data_times
 
     def create_trimmed_file(self):
         self.stn = re.compile(self.station)
@@ -227,51 +232,59 @@ class NBM:
     # option of plotting either way.
     def expand_df(self):
 
-        self.pop_bar = self.nbm.PoP.tolist()
+        #self.pop_bar = self.nbm.PoP.tolist()
 
-        self.pop_ts = self.nbm['PoP'] 
-        self.nbm['POP_FILL'] = self.nbm.PoP.ffill()
-        self.pop_fill_ts =self.nbm.loc[:, ['POP_FILL']]
+        #self.pop_ts = self.nbm['PoP'] 
+        self.nbm['PoPF'] = self.nbm.PoP.ffill()
+        self.popf_ts =self.nbm.loc[:, ['PoPF']]
         #self.pop_fill_ts[0] = 0.0
-        self.prods['pop_fill_ts']['data'] = self.pop_fill_ts
-        self.prods['pop_ts']['data'] = self.pop_ts
-        self.pop_bar = self.nbm.PoP.to_list()
-        self.prods['pop_bar']['data'] = self.pop_bar
-
+        self.prods['popf_ts']['data'] = self.popf_ts
+        #self.prods['pop_ts']['data'] = self.pop_ts
+        self.popf_bar = self.nbm.PoPF.to_list()
+        self.prods['popf_bar']['data'] = self.popf_bar
         
-        self.nbm['APRA'] = self.nbm['PoP'] * self.nbm['PRA']/100
-        self.nbm['APRA_FILL'] = self.nbm.APRA.ffill()
-        self.apra_fill_ts = self.nbm.loc[:, ['APRA_FILL']]
-        #self.apra_fill_ts[0] = 0.0
-        self.prods['apra_fill_ts']['data'] = self.apra_fill_ts
 
-        self.apra_ts = self.nbm['APRA']
-        self.prods['apra_ts']['data'] = self.apra_ts
-        self.apra_bar = self.nbm.APRA.to_list()
-        self.prods['apra_bar']['data'] = self.apra_bar
+        self.nbm['APTSF'] = self.nbm.TST.ffill()
+        # this in not conditional probability like the others
+        self.aptsf_bar = self.nbm.APTSF.to_list()
+        self.aptsf_ts = self.nbm.loc[:, ['APTSF']]
+        self.prods['aptsf_bar']['data'] = self.aptsf_bar
+        self.prods['aptsf_ts']['data'] = self.aptsf_ts
 
-        self.nbm['APSN'] = self.nbm['PoP'] * self.nbm['PSN']/100
-        self.nbm['APSN_FILL'] = self.nbm.APSN.ffill()
-        self.apsn_fill_ts = self.nbm.loc[:, ['APSN_FILL']]
-        #self.apsn_fill_ts[0] = 0.0
-        self.prods['apsn_fill_ts']['data'] = self.apsn_fill_ts
-        self.apsn_ts = self.nbm['APSN']
-        self.prods['apsn_ts']['data'] = self.apsn_ts
-        self.apsn_bar = self.nbm.APSN.to_list()
-        self.prods['apsn_bar']['data'] = self.apsn_bar
+        self.nbm['PRAF'] = self.nbm.PRA.ffill()
+        self.nbm['APRAF'] = self.nbm['PoPF'] * self.nbm['PRAF']/100
+        self.apraf_bar = self.nbm.APRAF.to_list()
+        self.apraf_ts = self.nbm.loc[:, ['APRAF']]
+        self.prods['apraf_bar']['data'] = self.apraf_bar
+        self.prods['apraf_ts']['data'] = self.apraf_ts
 
-        self.nbm['APZR'] = self.nbm['PoP'] * self.nbm['PZR']/100
-        self.nbm['APZR_FILL'] = self.nbm.APZR.ffill()
-        self.apzr_fill_ts = self.nbm.loc[:, ['APZR_FILL']]
-        #self.apzr_fill_ts[0] = 0.0
-        self.prods['apzr_fill_ts']['data'] = self.apzr_fill_ts
-        self.apzr_ts = self.nbm['APZR']
-        self.prods['apzr_ts']['data'] = self.apzr_ts
-        self.apzr_bar = self.nbm.APZR.to_list()
-        self.prods['apzr_bar']['data'] = self.apzr_bar
+        self.nbm['PRAF'] = self.nbm.PRA.ffill()
+        self.nbm['APRAF'] = self.nbm['PoPF'] * self.nbm['PRAF']/100
+        self.apraf_bar = self.nbm.APRAF.to_list()
+        self.apraf_ts = self.nbm.loc[:, ['APRAF']]
+        self.prods['apraf_bar']['data'] = self.apraf_bar
+        self.prods['apraf_ts']['data'] = self.apraf_ts
 
+        self.nbm['PSNF'] = self.nbm.PSN.ffill()
+        self.nbm['APSNF'] = self.nbm['PoPF'] * self.nbm['PSNF']/100
+        self.apsnf_bar = self.nbm.APSNF.to_list()
+        self.apsnf_ts = self.nbm.loc[:, ['APSNF']]
+        self.prods['apsnf_bar']['data'] = self.apsnf_bar
+        self.prods['apsnf_ts']['data'] = self.apsnf_ts
 
-        self.nbm['APPL'] = self.nbm['PoP'] * self.nbm['PPL']/100
+        self.nbm['PZRF'] = self.nbm.PZR.ffill()
+        self.nbm['APZRF'] = self.nbm['PoPF'] * self.nbm['PZRF']/100
+        self.apzrf_bar = self.nbm.APZRF.to_list()
+        self.apzrf_ts = self.nbm.loc[:, ['APZRF']]
+        self.prods['apzrf_bar']['data'] = self.apzrf_bar
+        self.prods['apzrf_ts']['data'] = self.apzrf_ts
+
+        self.nbm['PPLF'] = self.nbm.PPL.ffill()
+        self.nbm['APPLF'] = self.nbm['PoPF'] * self.nbm['PPLF']/100
+        self.applf_bar = self.nbm.APPLF.to_list()
+        self.applf_ts = self.nbm.loc[:, ['APPLF']]
+        self.prods['applf_bar']['data'] = self.applf_bar
+        self.prods['applf_ts']['data'] = self.applf_ts
 
     
         self.nbm['SN'] = self.nbm['SN']*0.1
@@ -394,7 +407,13 @@ class NBM:
         self.wgst_arr = np.asarray(self.wgst_list)
         self.wgst_list = self.wgst_arr.astype(int)
 
+
         self.sky_list = self.nbm.SKY.tolist()
+
+        if self.bulletin_type == 'nbhtx':
+            self.cig_list = self.nbm.CIG.tolist()
+            self.lcb_list = self.nbm.LCB.tolist()
+            self.vis_list = self.nbm.VIS.tolist()        
 
         self.wc_bar = []
         self.ttfb_bar = []
@@ -437,6 +456,169 @@ class NBM:
         self.vis_list = self.nbm.VIS.tolist()
         return
 
+
+    def taf(self):
+
+        self.taf_dict = {}
+        
+        def ccalc(cig,hour='current'):
+            if str(cig) == '-88':
+                cigf = ''
+                ccat = 5
+            elif cig >= 30:
+                cigf = 'BKN' + '{:03d}'.format(cig)
+                ccat = 4
+            elif cig >= 20:
+                cigf = 'BKN' + '{:03d}'.format(cig)
+                ccat = 3
+            elif cig >= 10:
+                cigf = 'BKN' + '{:03d}'.format(cig)
+                ccat = 2
+            elif cig >= 5:
+                cigf = 'OVC' + '{:03d}'.format(cig)
+                ccat = 1
+            else:
+                cigf = 'VV' + '{:03d}'.format(cig)
+                ccat = 0
+
+            return cigf, ccat
+
+        def vcalc(vsby,hour='currrent'):
+            #vsby_prev = self.vis_list[t-0]
+            vsby = self.vis_list[t]
+            if vsby > 6:
+                visf = 'P6'
+                vcat = 5        #'VFR'
+            elif vsby >= 3:
+                visf = '{:.0f}'.format(vsby)
+                vcat = 4        #'MVFR'
+            elif vsby >= 2:
+                visf = '{:.0f}'.format(vsby)
+                vcat = 3     
+            elif vsby >= 1:
+                visf = '{:.0f}'.format(vsby)
+                vcat = 2        #'IFR'
+            elif vsby >= 0.5:
+                visf = '3/4'
+                vcat = 1        #'LIFR'
+            else:
+                visf = '1/4'
+                vcat = 0        #'VLIFR'
+
+            return visf, vcat
+
+
+        for t in range(1,len(self.data_times)):
+            dt = self.data_times[t]
+            dts = self.data_times[t].strftime('FM%d%H%M')
+
+            wdir_prev = self.wdir_list[t-1]
+            wdir = self.wdir_list[t]
+            wdirf = '{:02d}'.format(wdir) + '0'
+            wdir_diff = np.absolute((wdir_prev + 50) - (wdir + 50))
+
+            wspd_prev = self.wspd_list[t-1]
+            wspd = self.wspd_list[t]
+            wspdf = '{:02d}'.format(wspd)
+            wspd_diff = np.absolute(wspd_prev - wspd)
+
+            wgst_prev = self.wgst_list[t-0]
+            wgst = self.wgst_list[t]
+
+            delta_wgst = wgst - wgst_prev
+            spd_gst_diff = wgst - wspd
+            if (spd_gst_diff > 8 and wspd > 8) or (spd_gst_diff > 5 and wspd > 12) or delta_wgst > 8:
+                g = f'G{wgst}KT'
+            else:
+                g =''
+
+            
+            wx = ''
+            if self.aptsf_bar[t] > 60:
+                wx = wx + 'TS'
+                nots = False
+            else:
+                nots = True
+
+            if self.apraf_bar[t] > 60:
+                wx = wx + 'RA'
+                nora = False
+            else:
+                nora = True
+
+            if self.applf_bar[t] > 60:
+                wx = wx + 'PL'
+                nopl = False
+            else:
+                nopl = True
+
+            if self.apsnf_bar[t] > 60:
+                wx = wx + 'SN'
+                nosn = False
+            else:
+                nosn = True
+
+            if self.apzrf_bar[t] > 60:
+                wx = wx + 'ZR'
+                nozr = False
+            else:
+                nozr = True
+
+            if (wx == ''):
+                if self.vis_list[t] < 3:
+                    wx = 'FG'
+                elif self.vis_list[t] < 6:
+                    wx = 'BR'
+
+                     
+            cigf_prev,ccat_prev = ccalc(self.cig_list[t-1])
+            cigf,ccat = ccalc(self.cig_list[t])            
+            ccat_diff = np.absolute(ccat_prev - ccat)
+
+
+            lcb = self.lcb_list[t]
+            if np.abs(self.cig_list[t] - lcb) > 2:
+                lcbf = 'SCT' + '{:03d}'.format(lcb)
+            else:
+                lcbf = ''
+            
+            
+            visf_prev,vcat_prev = vcalc(self.vis_list[t-0])         
+            visf,vcat = vcalc(self.vis_list[t])
+            vcat_diff = np.absolute(vcat - vcat_prev)
+            
+            
+
+            self.taf_dict[dt] = {'dt_str': dts,
+                                 'wdir_str': wdirf,
+                            'delta_wdir': wdirf,
+                            'wspd_str': wspdf,
+                            'delta_wspd': wspd_diff,
+                            'wgst_str': g,
+                            'cig_str': cigf,
+                            'lcb_str': lcbf,
+                            'delta_ccat': ccat_diff,
+                            'vis_str': visf,
+                            'wx_str': wx,
+                            'delta_vcat': vcat_diff
+                            }    
+
+            c_change = False
+            w_change = False
+
+
+            if np.max([vcat_diff,ccat_diff]) > 0:
+                c_change = True
+
+            if  (wdir_diff > 30 and wspd > 8) or delta_wgst > 10:
+                w_change = True
+            
+            #elements = [dts, wdirf, wspdf, g, visf, lcbf, cigf, change]
+            line_str = '{} {}{}KT{} {}SM {} {} {} {}'.format(dts, wdirf, wspdf, g, visf, wx, lcbf, cigf, c_change)
+            if w_change or c_change:
+                
+                print(line_str)
+
     def u_v_components(self):
         # since the convention is "direction from"
         # we have to multiply by -1
@@ -471,7 +653,8 @@ class NBM:
             pop_bar_width = 7/35            
         fig_set = {'4':(14,13),'5':(14,15),'6':(12,18)}
         fig, axes = plt.subplots(len(self.products),1,figsize=fig_set[str(len(self.products))],sharex=False,subplot_kw={'xlim': (self.idx[0],self.idx[-1])})
-    
+        #fig = plt.figure(constrained_layout=True,figsize=(12,18),sharex=False,subplot_kw={'xlim': (self.idx[0],self.idx[-1])})    
+        #gsp = fig.add_gridspec(6, 1)
         #fig, axes = plt.subplots(len(products),1,figsize=(16,8),sharex=True,subplot_kw={'xlim': (start_time,end_time)})
         plt.subplots_adjust(bottom=0.1, left=0.17, top=0.9)
         
@@ -500,27 +683,20 @@ class NBM:
             #a.xaxis.grid(True, linewidth=20, alpha = 0.12, zorder=1)  
     
     
-            if self.y == 'apra_ts':
+            if self.y == 'apraf_ts':
                 self.plotting()
                 this_title = 'Probability of:\n\nAny Precip\n(gray dash)\n\nSnow (blue)\n\nIce (purple)'
                 self.a.set_ylabel(this_title, rotation=0)
     
-                if self.bulletin_type == 'nbhtx':
-                    self.a.plot(self.prods['apra_ts']['data'],linewidth=2, zorder=10,color=self.prods['apra_ts']['color'])
-                    self.a.plot(self.prods['apsn_ts']['data'],linewidth=2, zorder=10,color=self.prods['apsn_ts']['color'])
-                    self.a.plot(self.prods['apzr_ts']['data'],linewidth=2, zorder=10,color=self.prods['apzr_ts']['color'])
-                    self.a.plot(self.prods['pop_ts']['data'],linewidth=6,linestyle=':', zorder=9,color=self.prods['pop_ts']['color'])
 
-                else:
-                    #print('plotting filled?')
-                    #print(self.prods['pop_fill_ts']['data'])
-                    self.a.plot(self.prods['apra_fill_ts']['data'],linewidth=2, zorder=10,color=self.prods['apra_fill_ts']['color'])
-                    self.a.plot(self.prods['apsn_fill_ts']['data'],linewidth=2, zorder=8,color=self.prods['apsn_fill_ts']['color'])
-                    self.a.plot(self.prods['apzr_fill_ts']['data'],linewidth=2, zorder=7,color=self.prods['apzr_fill_ts']['color'])
-                    self.a.plot(self.prods['pop_fill_ts']['data'],linewidth=6,linestyle=':', zorder=6,color=self.prods['pop_fill_ts']['color'])
-    
+                self.a.plot(self.prods['apraf_ts']['data'],linewidth=2, zorder=10,color=self.prods['apraf_ts']['color'])
+                self.a.plot(self.prods['apsnf_ts']['data'],linewidth=2, zorder=8,color=self.prods['apsnf_ts']['color'])
+                self.a.plot(self.prods['apzrf_ts']['data'],linewidth=2, zorder=7,color=self.prods['apzrf_ts']['color'])
+                self.a.plot(self.prods['popf_ts']['data'],linewidth=6,linestyle=':', zorder=6,color=self.prods['popf_ts']['color'])
 
-            if self.y == 'apra_bar':
+ 
+
+            if self.y == 'apraf_bar':
                 self.plotting()
                 this_title = 'Probability of:\n\nAny Precip\n(gray dash)\n\nSnow (blue)\n\nIce (purple)'
                 self.a.set_ylabel(this_title, rotation=0)
@@ -529,10 +705,6 @@ class NBM:
                 self.a.bar(self.data_times,self.prods['apra_bar']['data'],width=pop_bar_width*0.80, zorder=10,align='center',bottom=self.prods[self.y]['bottom'],color=self.prods['apra_bar']['color'])
                 self.a.bar(self.data_times,self.prods['apsn_bar']['data'],width=pop_bar_width*-0.25, zorder=10,align='edge',bottom=self.prods[self.y]['bottom'],color=self.prods['apsn_bar']['color'])
                 self.a.bar(self.data_times,self.prods['apzr_bar']['data'],width=pop_bar_width*0.25, zorder=10,align='edge',bottom=self.prods[self.y]['bottom'],color=self.prods['apzr_bar']['color'])
-                #self.a.plot(self.prods['apra_bar']['data'],linewidth=2, zorder=7,color=self.prods['apra_bar']['color'])
-                #self.a.plot(self.prods['apsn_bar']['data'],linewidth=2, zorder=5,color=self.prods['apsn_bar']['color'])
-                #self.a.plot(self.prods['apzr_bar']['data'],linewidth=2, zorder=3,color=self.prods['apzr_bar']['color'])
-                #self.a.plot(self.prods['pop_bar']['data'],linewidth=6,linestyle=':', zorder=9,color=self.prods['pop_ts']['color'])
     
     
             if self.y == 'wind':
@@ -562,9 +734,6 @@ class NBM:
                     u_norm = u / np.sqrt(u**2 + v**2)
                     v_norm = v / np.sqrt(u**2 + v**2)
                     self.a.quiver(p, 0.6, u_norm, v_norm, scale=30, width=0.004,color=[0,0,1,0.9], zorder=10,pivot='middle')
-    
-                    #a.quiverkey(q, X=0.0, Y=0.0, U=10,zorder=10)
-                    #a.barbs(p, 0.7, u, v, length=7, color=[0,0,1,0.9], pivot='middle')
                     self.a.text(p, 0.35, f'{s}',horizontalalignment='center',color=[0,0,1,0.9])
                     self.a.text(p, 0.25, f'{g}',horizontalalignment='center',color=[0,0,102/255,1])
 
@@ -573,10 +742,28 @@ class NBM:
             # specialized treatment for ranges and gridlines
             if self.y in ['acsn_bar','aczr_bar','acqp_bar','sn_bar','zr_bar','qp_bar']:
                 self.plotting()
-
                 self.a.bar(self.data_times,self.prods[self.y]['data'],width=pop_bar_width, zorder=10,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods[self.y]['color'])
                 self.a.set_ylabel(self.prods[self.y]['title'], rotation=0)
                 self.a.get_xaxis().set_visible(True)
+
+
+            # specialized treatment for ranges and gridlines
+            if self.y in ['winter_bar']:
+                self.gs = self.GridShader(self.a, facecolor="lightgrey", first=True, alpha=0.0) 
+                self.a.grid(which='major', axis='y')
+                self.a.set_xticks(self.data_times)
+                color = 'tab:red'
+                self.a.bar(self.data_times,self.prods['acsn_bar']['data'],width=pop_bar_width, zorder=10,align=bar_align,bottom=self.prods['acsn_bar']['bottom'],color=self.prods['acsn_bar']['color'])
+                self.a.set_ylabel(self.prods['acsn_bar']['title'], rotation=0, color=self.prods['acsn_bar']['color'])  # we already handled the x-label with ax1                
+      
+                
+                color = 'tab:blue'
+                self.a2 = self.a.twinx()  # instantiate a second axes that shares the same x-axis
+                self.a2.bar(self.data_times,self.prods['aczr_bar']['data'],width=pop_bar_width, zorder=10,align=bar_align,bottom=self.prods['aczr_bar']['bottom'],color=self.prods['aczr_bar']['color'])
+                self.a2.set_ylabel(self.prods['aczr_bar']['title'], rotation=0, color=self.prods['acsn_bar']['color'])  # we already handled the x-label with ax1
+                self.a2.tick_params(axis='y', labelcolor=color)
+                
+
     
             if self.y in ['t_bar','wc_bar']:
                 tick_list = self.prods['wc_bar']['yticks']
@@ -600,6 +787,7 @@ class NBM:
                 self.a.set_ylabel(self.prods[self.y]['title'], rotation=0)
                 self.a.get_xaxis().set_visible(True)
                 self.a.set(yticks = self.prods[self.y]['yticks'], yticklabels = self.prods[self.y]['ytick_labels'])
+
                 
             if self.y in ['ttfb_bar','vis_cat_bar','zr_cat_bar']:
                 self.gs = self.GridShader(self.a, facecolor="lightgrey", first=True, alpha=0.0) 
@@ -620,5 +808,6 @@ class NBM:
         return
 
 
-test = NBM('KCLE', 'nbstx', False)
+
+test = NBM('KDLH', 'nbhtx', False, False)
 
