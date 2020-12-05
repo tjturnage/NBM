@@ -30,6 +30,7 @@ import matplotlib.pyplot as plt
 import matplotlib.transforms
 import math
 
+
 try:
     os.listdir('/usr')
     scripts_dir = '/data/scripts'
@@ -39,10 +40,10 @@ except:
 
 NBM_dir = os.path.join(scripts_dir,'NBM')
 ymdh = re.compile('[0-9]+/[0-9]+/[0-9]+\s+[0-9]+')
+mtr_ob = re.compile('(\S*KT.*(?=\S{2,4}/))')
 
 class NBM:
 
-    
     from my_nbm_functions import basic_elements, hourly_elements, short_elements, categorize
     from my_nbm_functions import temperature_bounds, prods, wind_chill, GridShader, nbm_station_dict
     station_master = nbm_station_dict(scripts_dir)
@@ -89,6 +90,7 @@ class NBM:
         if self.plot_flag:
             self.plot()
         if self.bulletin_type == 'nbhtx':
+            self.get_observation()
             self.taf()
 
     def get_nbm(self):
@@ -105,14 +107,27 @@ class NBM:
         
         return
 
+    def get_observation(self):
+            #https://w1.weather.gov/data/METAR/KGRR.1.txt
+            mtr_ob = re.compile('(\S*KT.*(?=\S{2,4}/))')
+            self.url = 'https://w1.weather.gov/data/METAR/' + self.station + '.1.txt'
+            self.mtr_raw_path = os.path.join(NBM_dir, self.station + '.txt')
+            self.r = requests.get(self.url)
+            self.mtr_text = str(self.r.content)
+            self.mtr_match = mtr_ob.search(str(self.mtr_text))
+            if (self.mtr_match is not None):
+                print(self.mtr_match[0])
+                self.ob_str = self.mtr_match[0]
+            else:
+                self.ob_str = 'No match!'
+            return
 
-        
+
     def file_path(self):
         self.raw_file = f'nbm_raw_{self.bulletin_type}.txt'
         self.trimmed_file = f'nbm_trimmed_{self.bulletin_type}.txt'
         self.raw_path = os.path.join(self.NBM_dir, self.raw_file)
         self.trimmed_path = os.path.join(self.NBM_dir, self.trimmed_file)
-
 
 
     def make_idx(self):
@@ -362,12 +377,10 @@ class NBM:
 
         self.nbm['VIS'] = self.nbm['VIS']*0.1
 
-
         self.nbm['SKT'] = self.nbm['WSP'] * 1.15
         self.nbm['GKT'] = self.nbm['GST'] * 1.15
         self.decimals = pd.Series([1, 1], index=['SKT', 'GKT'])
         self.nbm.round(self.decimals)
-
 
         self.t_bar = self.nbm.TMP.tolist()
         self.t_bar = np.asarray(self.t_bar, dtype=np.float32)
@@ -406,7 +419,6 @@ class NBM:
         self.wgst_list = [round(x) for x in self.wgst_list]
         self.wgst_arr = np.asarray(self.wgst_list)
         self.wgst_list = self.wgst_arr.astype(int)
-
 
         self.sky_list = self.nbm.SKY.tolist()
 
@@ -458,12 +470,15 @@ class NBM:
 
 
     def taf(self):
-
+        self.taf_df = self.nbm
         self.taf_dict = {}
         
         def ccalc(cig,hour='current'):
             if str(cig) == '-88':
                 cigf = ''
+                ccat = 5
+            elif cig >= 35:
+                cigf = 'BKN' + '{:03d}'.format(cig)
                 ccat = 5
             elif cig >= 30:
                 cigf = 'BKN' + '{:03d}'.format(cig)
@@ -477,13 +492,16 @@ class NBM:
             elif cig >= 5:
                 cigf = 'OVC' + '{:03d}'.format(cig)
                 ccat = 1
+            elif cig >= 3:
+                cigf = 'OVC' + '{:03d}'.format(cig)
+                ccat = 0
             else:
                 cigf = 'VV' + '{:03d}'.format(cig)
                 ccat = 0
 
             return cigf, ccat
 
-        def vcalc(vsby,hour='currrent'):
+        def vcalc(vsby,hour='current'):
             #vsby_prev = self.vis_list[t-0]
             vsby = self.vis_list[t]
             if vsby > 6:
@@ -492,9 +510,9 @@ class NBM:
             elif vsby >= 3:
                 visf = '{:.0f}'.format(vsby)
                 vcat = 4        #'MVFR'
-            elif vsby >= 2:
-                visf = '{:.0f}'.format(vsby)
-                vcat = 3     
+            # elif vsby >= 2:
+            #     visf = '{:.0f}'.format(vsby)
+            #     vcat = 3     
             elif vsby >= 1:
                 visf = '{:.0f}'.format(vsby)
                 vcat = 2        #'IFR'
@@ -507,117 +525,165 @@ class NBM:
 
             return visf, vcat
 
+        def wx_str(v):
+            thresh = 30
+            wx = ''
+            q = self.qp_bar[v]
+            s = self.sn_bar[v]
+            z = self.zr_bar[v]
+    
+            if self.aptsf_bar[v] > thresh:
+                wx = wx + 'TS'
+            if self.apraf_bar[v] > thresh:
+                wx = wx + 'RA'
+#            if self.apraf_bar[v] > thresh or q > 0:
+#                wx = wx + 'RA'
+            if self.applf_bar[v] > thresh:
+                wx = wx + 'PL'
+            if self.apsnf_bar[v] > thresh or s > 0:
+                wx = wx + 'SN'
+            if self.apzrf_bar[v] > thresh or z > 0:
+                wx = wx + 'ZR'
+            if (wx != ''):
+                if self.vis_list[v] < 1:
+                    wx = '+' + wx
+                elif self.vis_list[v] <= 2:
+                    wx = wx
+                elif self.vis_list[v] <= 3:
+                    wx = '-' + wx + ' BR'
+                else:
+                    wx = '-' + wx
+            else:
+                if self.vis_list[v] < 3:
+                    wx = 'FG'
+                elif self.vis_list[v] < 6:
+                    wx = 'BR'
+            return wx
 
-        for t in range(1,len(self.data_times)):
+
+        def calc_wgst(wgst):
+            spd_gst_diff = wgst - wspd
+            if (spd_gst_diff > 8 and wspd > 8) or (spd_gst_diff > 5 and wspd > 12):
+                g = f'G{wgst}KT'
+                flag = True
+            else:
+                g =''
+                flag = False
+            return g,flag
+
+
+        #--------------------------------------------
+
+        self.idx24 = self.idx0_utc + timedelta(days=1)
+        header_dts = self.idx0_utc.strftime('%d%H%M')
+        self.taf_text = ''
+
+        dyhr_beg = self.idx0_utc.strftime('%d%H')
+        dyhr_end = self.idx24.strftime('%d%H')
+        header_str = 'TAF\n{} {}Z {}/{} {}\n'.format(self.station, header_dts, dyhr_beg, dyhr_end, self.ob_str)
+        self.taf_text = self.taf_text + header_str
+
+        for t in range(2,len(self.data_times)):
+            wc = False
             dt = self.data_times[t]
+            
             dts = self.data_times[t].strftime('FM%d%H%M')
 
+            wdir_prev2 = self.wdir_list[t-2]
             wdir_prev = self.wdir_list[t-1]
             wdir = self.wdir_list[t]
             wdirf = '{:02d}'.format(wdir) + '0'
             wdir_diff = np.absolute((wdir_prev + 50) - (wdir + 50))
-
+            wdir_diff2 = np.absolute((wdir_prev2 + 50) - (wdir + 50))
+            
+            wspd_prev2 = self.wspd_list[t-2]
             wspd_prev = self.wspd_list[t-1]
             wspd = self.wspd_list[t]
             wspdf = '{:02d}'.format(wspd)
             wspd_diff = np.absolute(wspd_prev - wspd)
+            wspd_diff2 = np.absolute(wspd_prev2 - wspd)
 
-            wgst_prev = self.wgst_list[t-0]
-            wgst = self.wgst_list[t]
-
-            delta_wgst = wgst - wgst_prev
-            spd_gst_diff = wgst - wspd
-            if (spd_gst_diff > 8 and wspd > 8) or (spd_gst_diff > 5 and wspd > 12) or delta_wgst > 8:
-                g = f'G{wgst}KT'
+            #----- GUSTS
+            g_prev, g_flag_prev = calc_wgst(self.wgst_list[t-1])
+            g, g_flag = calc_wgst(self.wgst_list[t])
+            if g_flag_prev != g_flag:
+                gc = True
             else:
-                g =''
+                gc = False
 
+            if gc is False:
+                wspdf = wspdf + 'KT'
             
-            wx = ''
-            if self.aptsf_bar[t] > 60:
-                wx = wx + 'TS'
-                nots = False
+            if (wdir_diff > 30 and wdir_diff2 > 30 and wspd > 8) or (wspd_diff > 8 and wspd_diff2 > 8) or gc:
+                wc = True
+
+            #------ WX    
+            wx = wx_str(t)
+            wx_prev = wx_str(t-1)
+            wx_prev2 = wx_str(t-2)
+            
+            if wx != wx_prev and wx != wx_prev2:
+                delta_wx = True
             else:
-                nots = True
+                delta_wx = False
 
-            if self.apraf_bar[t] > 60:
-                wx = wx + 'RA'
-                nora = False
-            else:
-                nora = True
-
-            if self.applf_bar[t] > 60:
-                wx = wx + 'PL'
-                nopl = False
-            else:
-                nopl = True
-
-            if self.apsnf_bar[t] > 60:
-                wx = wx + 'SN'
-                nosn = False
-            else:
-                nosn = True
-
-            if self.apzrf_bar[t] > 60:
-                wx = wx + 'ZR'
-                nozr = False
-            else:
-                nozr = True
-
-            if (wx == ''):
-                if self.vis_list[t] < 3:
-                    wx = 'FG'
-                elif self.vis_list[t] < 6:
-                    wx = 'BR'
-
-                     
-            cigf_prev,ccat_prev = ccalc(self.cig_list[t-1])
-            cigf,ccat = ccalc(self.cig_list[t])            
-            ccat_diff = np.absolute(ccat_prev - ccat)
-
-
+            #------ LCB    
             lcb = self.lcb_list[t]
             if np.abs(self.cig_list[t] - lcb) > 2:
                 lcbf = 'SCT' + '{:03d}'.format(lcb)
             else:
                 lcbf = ''
-            
-            
-            visf_prev,vcat_prev = vcalc(self.vis_list[t-0])         
+
+            #------ CIG
+            cigf_prev2,ccat_prev2 = ccalc(self.cig_list[t-2])
+            cigf_prev,ccat_prev = ccalc(self.cig_list[t-1])
+            cigf,ccat = ccalc(self.cig_list[t])            
+            ccat_diff = np.absolute(ccat_prev - ccat)
+            ccat_diff2 = np.absolute(ccat_prev2 - ccat)
+
+
+            #------ VIS                            
+            visf_prev2,vcat_prev2 = vcalc(self.vis_list[t-2]) 
+            visf_prev,vcat_prev = vcalc(self.vis_list[t-1])         
             visf,vcat = vcalc(self.vis_list[t])
             vcat_diff = np.absolute(vcat - vcat_prev)
+            vcat_diff2 = np.absolute(vcat - vcat_prev2)
             
-            
+            #------ CATEGORY   
+            if (vcat_diff > 0 and vcat_diff2 > 0) or (ccat_diff > 0 and ccat_diff2 > 0):
+                delta_cat = True
+            else:
+                delta_cat = False
 
+            
             self.taf_dict[dt] = {'dt_str': dts,
                                  'wdir_str': wdirf,
-                            'delta_wdir': wdirf,
-                            'wspd_str': wspdf,
-                            'delta_wspd': wspd_diff,
-                            'wgst_str': g,
-                            'cig_str': cigf,
-                            'lcb_str': lcbf,
-                            'delta_ccat': ccat_diff,
-                            'vis_str': visf,
-                            'wx_str': wx,
-                            'delta_vcat': vcat_diff
-                            }    
-
-            c_change = False
-            w_change = False
+                                 'delta_wdir': wdirf,
+                                 'wspd_str': wspdf,
+                                 'delta_wspd': wspd_diff,
+                                 'wgst_str': g,
+                                 'cig_str': cigf,
+                                 'lcb_str': lcbf,
+                                 'delta_ccat': ccat_diff,
+                                 'vis_str': visf,
+                                 'wx_str': wx,
+                                 'delta_vcat': vcat_diff
+                                 }    
 
 
-            if np.max([vcat_diff,ccat_diff]) > 0:
-                c_change = True
-
-            if  (wdir_diff > 30 and wspd > 8) or delta_wgst > 10:
-                w_change = True
             
-            #elements = [dts, wdirf, wspdf, g, visf, lcbf, cigf, change]
-            line_str = '{} {}{}KT{} {}SM {} {} {} {}'.format(dts, wdirf, wspdf, g, visf, wx, lcbf, cigf, c_change)
-            if w_change or c_change:
-                
-                print(line_str)
+            line_str = '{} {}{}{} {}SM {} {} {}'.format(dts, wdirf, wspdf, g, visf, wx, lcbf, cigf)
+            taf_line = re.sub('\s+',' ',line_str)
+            taf_line = '     ' + taf_line + '\n'
+
+            if wc or delta_cat or delta_wx:
+                self.taf_text = self.taf_text + taf_line
+
+            
+        self.taf_text = self.taf_text[:-1] + '=\n'
+        print(self.taf_text)
+
+
 
     def u_v_components(self):
         # since the convention is "direction from"
@@ -643,7 +709,6 @@ class NBM:
         myFmt = DateFormatter("%I\n%p")
         myFmt = DateFormatter("%I")    
         
-
         bar_align = "center"   # "edge"
         if self.bulletin_type == 'nbhtx':
             reg_bar_width = 1/35
@@ -809,5 +874,5 @@ class NBM:
 
 
 
-test = NBM('KDLH', 'nbhtx', False, False)
+test = NBM('KCAR', 'nbhtx', True, False)
 
