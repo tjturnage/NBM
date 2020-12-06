@@ -1,22 +1,41 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Nov 25 14:43:12 2020
+Created on Sat 12/5/2020
 
 @author: thomas.turnage
 
-virtual card - https://vlab.ncep.noaa.gov/web/mdl/nbm-textcard-v4.0
+virtual card - https://www.weather.gov/mdl/lamp_desc
+
+UTC Hour of the day in UTC time. This is the hour at which the forecast is valid, or if the forecast is valid for a period, the
+
+WDR wind direction in tens of degrees.
+WSP wind speed in knots.
+WGS wind gust in knots.  "NG" = no gust
+PPO probability of precipitation (even non-measurable)
+P06 probability of measurable precipitation (PoP) during a 6-h period ending at that time.
+PCO categorical forecast of yes (Y) or no (N) of any precipitation
+LP1 probability of lightning (at least one total lightning flash) previous hour
+LC1 categorical forecast of no (N), low (L), medium (M), or high (H) prob lightning past hour
+CP1 probability of lightning flash and/or Z >= 40dBZ occurring past hour.
+CC1 categorical forecast of no (N), low (L), medium (M), or high (H) for above
+POZ* conditional probability of freezing pcp occurring at the hour. 
+POS* conditional probability of snow occurring at the hour. 
+TYP* conditional precipitation type at the hour.
+CLD forecast categories of total sky cover valid at that hour.
+CIG ceiling height categorical forecasts at the hour.
+CCG conditional ceiling height categorical forecasts if precipitation occurring.
+VIS visibility categorical forecasts at the hour.
+CVS conditional visibility categorical forecasts if pcpn occurring at the hour
+OBV obstruction to vision categorical forecasts at the hour.
 
 """
 
-element_dict = {'P01':'PoP','P06':'PoP',
-                'Q01':'QPF','Q06':'QPF',
-                'S01':'SN','S06':'SN',
-                'I01':'ZR','I06': 'ZR',
-                'T01':'TST', 'T03':'TST','T06':'TST'}
+
 
 
 import re
 import requests
+from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import os
 import sys
@@ -42,29 +61,22 @@ NBM_dir = os.path.join(scripts_dir,'NBM')
 ymdh = re.compile('[0-9]+/[0-9]+/[0-9]+\s+[0-9]+')
 mtr_ob = re.compile('(\S*KT.*(?=\S{2,4}/))')
 
-class NBM:
+class LAMP:
 
-    from my_nbm_functions import basic_elements, hourly_elements, short_elements, categorize
-    from my_nbm_functions import temperature_bounds, prods, wind_chill, GridShader, nbm_station_dict
+    from my_nbm_functions import basic_elements, hourly_elements, categorize
+    from my_nbm_functions import prods, GridShader, nbm_station_dict
     station_master = nbm_station_dict(scripts_dir)
-    def __init__(self, station, bulletin_type, download=True, plot_flag=True):
+    def __init__(self, station, download=True, plot_flag=True):
         self.station = station   # single station
         self.station_description = self.station_master[self.station]['name']
-        self.bulletin_type = bulletin_type
+        self.bulletin_type = 'glamp'
         self.download = download
-        self.plot_flag = plot_flag
-        if self.bulletin_type == 'nbhtx':
-            self.elements = self.basic_elements + self.hourly_elements
-            self.fcst_type = 'Hourly'
-        else:
-            self.elements = self.basic_elements + self.short_elements
-            self.fcst_type = 'Short Term'            
 
         self.raw_file = f'nbm_raw_{self.bulletin_type}.txt'
         self.trimmed_file = f'nbm_trimmed_{self.bulletin_type}.txt'
-        self.name = 'nbm'
+        self.name = 'lamp'
         #self.idx = None
-        self.tz_shift = 5
+
         self.now = datetime.utcnow()
         self.current_hour = self.now.replace(minute=0, second=0, microsecond=0)
         self.model_download_time = self.current_hour - timedelta(hours=1)
@@ -72,41 +84,62 @@ class NBM:
         self.raw_path = os.path.join(NBM_dir, self.raw_file)
         self.trimmed_path = os.path.join(NBM_dir, self.trimmed_file)
         
+        self.column_list = []
         self.data = []
         
-        self.nbm = None
-        self.nbm_old = None
-        self.products = ['apraf_ts','t_bar','wind','acqp_bar','acsn_bar','aczr_bar']
-        #self.products = ['apra_ts','t_bar','wind','acqp_bar', 'winter_bar']
+        self.taf = None
+        self.taf_old = None
         self.master()
         
 
     def master(self):
-        self.get_nbm()
-        self.create_trimmed_file()
+        self.get_lamp()
+        #self.create_trimmed_file()
         self.make_idx()
         self.create_df()
         self.expand_df()
-        if self.plot_flag:
-            self.plot()
-        if self.bulletin_type == 'nbhtx':
-            self.get_observation()
-            self.taf()
+        # self.get_observation()
+        # self.taf()
+        # if self.plot_flag:
+        #     self.plot()
 
-    def get_nbm(self):
+
+
+    def get_lamp(self):
         if self.download:
-            self.ymd = self.model_download_time.strftime('%Y%m%d')
-            self.hour = self.model_download_time.strftime('%H')
-            self.url = 'https://nomads.ncep.noaa.gov/pub/data/nccf/com/blend/prod/blend.' + self.ymd + '/' + self.hour + '/text/blend_' + self.bulletin_type + '.t' + self.hour + 'z'
+            self.url = 'https://www.nws.noaa.gov/cgi-bin/lamp/getlav.pl?sta=' + self.station
             self.r = requests.get(self.url)
-            print('downloading ... ' + str(self.url))
-            open(self.raw_path, 'wb').write(self.r.content)
-            print('Download Complete!')
-        else:
-            print('Nothing Downloaded!')
-        
-        return
+            self.soup = BeautifulSoup(self.r.text, 'html.parser')
+            self.tag = self.soup.findAll('pre')[0]
+            self.bull_text = self.tag.string
 
+            #print('downloading ... ' + str(self.url))
+            #GFS LAMP 2030 UTC  12/05/2020
+            #ymdh = re.compile('[0-9]+/[0-9]+/[0-9]+\s+[0-9]+')
+            ymd = re.compile('[0-9]+/[0-9]+/[0-9]+')
+            h = re.compile('(\d.*(?=\d\d\sUTC))')
+            dt = ymd.search(self.bull_text.string)
+            hr = h.search(self.bull_text.string)
+            if dt is not None and hr is not None:
+                self.ymd = dt[0]
+                self.hr = hr[0]
+                self.ymdh_str = self.ymd + self.hr
+                self.ymdh_str = '{} {}'.format(self.ymd, self.hr)
+                print(self.ymdh_str)
+            else:
+                print('missing match!')
+            self.run_ymdh = datetime.strptime(self.ymdh_str,'%m/%d/%Y %H')
+            self.fh0 = self.run_ymdh + timedelta(hours=1)
+            blines = self.bull_text.splitlines()
+            self.fixed = '\n'.join(blines[2:-1])
+            lines = self.fixed.splitlines()
+            for l in lines:
+                self.column_list.append(l[1:4])
+            with open(self.trimmed_path, 'w') as self.trimmed:
+                self.trimmed.write(self.fixed)
+            return
+        
+        
     def get_observation(self):
             #https://w1.weather.gov/data/METAR/KGRR.1.txt
             mtr_ob = re.compile('(\S*KT.*(?=\S{2,4}/))')
@@ -123,11 +156,11 @@ class NBM:
             return
 
 
-    def file_path(self):
-        self.raw_file = f'nbm_raw_{self.bulletin_type}.txt'
-        self.trimmed_file = f'nbm_trimmed_{self.bulletin_type}.txt'
-        self.raw_path = os.path.join(self.NBM_dir, self.raw_file)
-        self.trimmed_path = os.path.join(self.NBM_dir, self.trimmed_file)
+    # def file_path(self):
+    #     self.raw_file = f'nbm_raw_{self.bulletin_type}.txt'
+    #     self.trimmed_file = f'nbm_trimmed_{self.bulletin_type}.txt'
+    #     self.raw_path = os.path.join(self.NBM_dir, self.raw_file)
+    #     self.trimmed_path = os.path.join(self.NBM_dir, self.trimmed_file)
 
 
     def make_idx(self):
@@ -152,92 +185,34 @@ class NBM:
                pandas date/time range to be used as index as well as start/end times
         """
 
-        self.run_dt_local = self.run_ymdh - timedelta(hours=self.tz_shift)
-
-        if self.bulletin_type == 'nbhtx':
-            self.fh0_utc = self.run_ymdh + timedelta(hours=1)
-            self.idx0_utc = self.fh0_utc - timedelta(hours=1)
 
 
-        elif self.bulletin_type == 'nbstx':
-            if self.run_ymdh.hour%3 == 0:
-                self.hr_delta = 6
-            elif self.run_ymdh.hour%3 == 1:
-                self.hr_delta = 5            
-            else:
-                self.hr_delta = 4
-                
-            self.fh0_utc = self.run_ymdh + timedelta(hours=self.hr_delta)
-            self.idx0_utc = self.fh0_utc - timedelta(hours=3)
+        self.fh0_utc = self.run_ymdh + timedelta(hours=1)
+        self.idx0_utc = self.fh0_utc - timedelta(hours=1)
+        self.idx = pd.date_range(self.idx0_utc, periods=27, freq='H')
 
-
-        self.idx0_local = self.idx0_utc - timedelta(hours=self.tz_shift)
-        self.fh0_local = self.fh0_utc - timedelta(hours=self.tz_shift)
-
-    
-        pTime_local = pd.Timestamp(self.idx0_local)
-        if self.bulletin_type == 'nbhtx':
-            self.idx = pd.date_range(pTime_local, periods=27, freq='H')
-            #self.idx6 = None
-        else:
-            #p6Time = pd.Timestamp(self.idx6_local)
-            #self.idx6 = pd.date_range(p6Time, periods=8, freq='6H')
-            self.idx = pd.date_range(pTime_local, periods=25, freq='3H')
         
         self.data_times = self.idx[1:-1]
         return self.data_times
 
-    def create_trimmed_file(self):
-        self.stn = re.compile(self.station)
-        self.sol = re.compile('SOL')
-        self.ymdh = re.compile('[0-9]+/[0-9]+/[0-9]+\s+[0-9]+')
-        self.column_list = []
-        self.stn_found = False
-        self.sol_found = False
-        with open(self.raw_path, 'r') as self.raw:          
-            with open(self.trimmed_path, 'w') as self.trimmed:
-                for self.line in self.raw:
-                    self.stn_match = self.stn.search(self.line)
-                    self.ymdh_match = self.ymdh.search(self.line)
-                    self.sol_match = self.sol.search(self.line)
-                    if (self.stn_match is not None and self.stn_found == False):
-                        self.station = self.stn_match[0]
-                        self.dt_str = self.ymdh_match[0]
-                        self.run_ymdh = datetime.strptime(self.ymdh_match[0], '%m/%d/%Y  %H%M')
-                        self.idx = self.make_idx()
-                        self.stn_found = True
-                        
-                    if self.stn_found and self.sol_match is None:
-                        self.start = str(self.line[1:4])
-                        if self.start in self.elements:
-                            if self.start in element_dict:
-                                self.start = element_dict[self.start]
-                                
-                            self.column_list.append(self.start)
-                            self.trimmed.write(self.line)
-
-                    
-                    if self.stn_found and self.sol_match is not None:
-                        return
-
 
     def create_df(self):
-        if self.bulletin_type == 'nbhtx':
-            self.nbm_old = pd.read_fwf(self.trimmed_path, widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
-        else:
-            self.nbm_old = pd.read_fwf(self.trimmed_path, widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
 
+        self.nbm_old = pd.read_fwf(self.trimmed_path, header=[0], skip_blank_lines=True, widths=(5,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3))
         self.nbm = self.nbm_old.transpose()
-        self.old_column_names = self.nbm.columns.tolist()
         try:
             self.nbm.drop(['UTC'], inplace=True)
         except:
             pass
+        self.old_column_names = self.column_list
 
-        self.nbm.set_index(self.data_times, inplace=True)
-        self.elements = self.column_list[1:]
-        self.col_rename_dict = {i:j for i,j in zip(self.old_column_names,self.elements)}
+        #self.nbm.set_index(self.data_times, inplace=True)
+        self.elements = self.column_list
+        els = [k for k in range(0,len(self.elements))]
+        
+        self.col_rename_dict = {i:j for i,j in zip(els[:-1],self.elements[1:])}
         self.nbm.rename(columns=self.col_rename_dict, inplace=True)
+        self.nbm.set_index(self.data_times, inplace=True)
         return
 
 
@@ -250,7 +225,7 @@ class NBM:
         #self.pop_bar = self.nbm.PoP.tolist()
 
         #self.pop_ts = self.nbm['PoP'] 
-        self.nbm['PoPF'] = self.nbm.PoP.ffill()
+        self.nbm['PoPF'] = self.nbm.PPO.ffill()
         self.popf_ts =self.nbm.loc[:, ['PoPF']]
         #self.pop_fill_ts[0] = 0.0
         self.prods['popf_ts']['data'] = self.popf_ts
@@ -259,121 +234,33 @@ class NBM:
         self.prods['popf_bar']['data'] = self.popf_bar
         
 
-        self.nbm['APTSF'] = self.nbm.TST.ffill()
-        # this in not conditional probability like the others
-        self.aptsf_bar = self.nbm.APTSF.to_list()
-        self.aptsf_ts = self.nbm.loc[:, ['APTSF']]
-        self.prods['aptsf_bar']['data'] = self.aptsf_bar
-        self.prods['aptsf_ts']['data'] = self.aptsf_ts
+        # self.nbm['APTSF'] = self.nbm.TST.ffill()
+        # # this in not conditional probability like the others
+        # self.aptsf_bar = self.nbm.APTSF.to_list()
+        # self.aptsf_ts = self.nbm.loc[:, ['APTSF']]
+        # self.prods['aptsf_bar']['data'] = self.aptsf_bar
+        # self.prods['aptsf_ts']['data'] = self.aptsf_ts
 
-        self.nbm['PRAF'] = self.nbm.PRA.ffill()
-        self.nbm['APRAF'] = self.nbm['PoPF'] * self.nbm['PRAF']/100
-        self.apraf_bar = self.nbm.APRAF.to_list()
-        self.apraf_ts = self.nbm.loc[:, ['APRAF']]
-        self.prods['apraf_bar']['data'] = self.apraf_bar
-        self.prods['apraf_ts']['data'] = self.apraf_ts
 
-        self.nbm['PSNF'] = self.nbm.PSN.ffill()
+
+        self.nbm['PSNF'] = self.nbm.POS.ffill()
         self.nbm['APSNF'] = self.nbm['PoPF'] * self.nbm['PSNF']/100
         self.apsnf_bar = self.nbm.APSNF.to_list()
         self.apsnf_ts = self.nbm.loc[:, ['APSNF']]
         self.prods['apsnf_bar']['data'] = self.apsnf_bar
         self.prods['apsnf_ts']['data'] = self.apsnf_ts
 
-        self.nbm['PZRF'] = self.nbm.PZR.ffill()
+        self.nbm['PZRF'] = self.nbm.POZ.ffill()
         self.nbm['APZRF'] = self.nbm['PoPF'] * self.nbm['PZRF']/100
         self.apzrf_bar = self.nbm.APZRF.to_list()
         self.apzrf_ts = self.nbm.loc[:, ['APZRF']]
         self.prods['apzrf_bar']['data'] = self.apzrf_bar
         self.prods['apzrf_ts']['data'] = self.apzrf_ts
 
-        self.nbm['PPLF'] = self.nbm.PPL.ffill()
-        self.nbm['APPLF'] = self.nbm['PoPF'] * self.nbm['PPLF']/100
-        self.applf_bar = self.nbm.APPLF.to_list()
-        self.applf_ts = self.nbm.loc[:, ['APPLF']]
-        self.prods['applf_bar']['data'] = self.applf_bar
-        self.prods['applf_ts']['data'] = self.applf_ts
-
-    
-        self.nbm['SN'] = self.nbm['SN']*0.1
-        self.sn_bar = self.nbm.SN.tolist()
-        self.prods['sn_bar']['data'] = self.sn_bar
-
-        self.nbm['ACSN'] = self.nbm['SN'].cumsum()
-        self.acsn_max = self.nbm.ACSN.max()
-        if self.acsn_max > 7:
-            self.prods['acsn_bar']['ymax'] = 13
-            self.prods['acsn_bar']['yticks'] = [0,2,4,6,8,10,12] 
-            self.prods['acsn_bar']['ytick_labels'] = ['0','2','4','6','8','10','12']            
-        elif self.acsn_max > 4:
-            self.prods['acsn_bar']['ymax'] = 8
-            self.prods['acsn_bar']['yticks'] = [0,1,2,4,6,8] 
-            self.prods['acsn_bar']['ytick_labels'] = ['0','1','2','4','6','8']
-        elif self.acsn_max > 2:
-            self.prods['acsn_bar']['ymax'] = 4
-            self.prods['acsn_bar']['yticks'] = [0,1,2,3,4] 
-            self.prods['acsn_bar']['ytick_labels'] = ['0','1','2','3','4']
-        else:
-            self.prods['acsn_bar']['ymax'] = 2.5
-            self.prods['acsn_bar']['yticks'] = [0,0.5,1,2] 
-            self.prods['acsn_bar']['ytick_labels'] = ['0','0.5','1','2']            
-
-        self.acsn_bar = self.nbm.ACSN.tolist()
-        self.prods['acsn_bar']['data'] = self.acsn_bar
-        
-        self.nbm['QPF'] = self.nbm['QPF']*0.01
-        self.qp_bar = self.nbm.QPF.tolist()
-        self.prods['qp_bar']['data'] = self.qp_bar
-
-        self.nbm['ACQP'] = self.nbm['QPF'].cumsum()
-        self.acqp_max = self.nbm.ACQP.max()
-        if self.acqp_max > 8:
-            self.prods['acqp_bar']['ymax'] = 11
-            self.prods['acqp_bar']['yticks'] = [0,1,2,4,6,8,10] 
-            self.prods['acqp_bar']['ytick_labels'] = ['0','1','2','4','6','8','10']            
-        elif self.acqp_max > 6:
-            self.prods['acqp_bar']['ymax'] = 6.5
-            self.prods['acqp_bar']['yticks'] = [0,1,2,4,6] 
-            self.prods['acqp_bar']['ytick_labels'] = ['0','1','2','4','6']
-        elif self.acqp_max > 4:
-            self.prods['acqp_bar']['ymax'] = 6.1
-            self.prods['acqp_bar']['yticks'] = [0,1,2,4,6] 
-            self.prods['acqp_bar']['ytick_labels'] = ['0','1','2','4','6']
-        elif self.acqp_max > 3:
-            self.prods['acqp_bar']['ymax'] = 4.1
-            self.prods['acqp_bar']['yticks'] = [0,1,2,3,4] 
-            self.prods['acqp_bar']['ytick_labels'] = ['0','1','2','3','4']
-        elif self.acqp_max > 2:
-            self.prods['acqp_bar']['ymax'] = 3.1
-            self.prods['acqp_bar']['yticks'] = [0,1,2,3] 
-            self.prods['acqp_bar']['ytick_labels'] = ['0','1','2','3']
-        elif self.acqp_max > 1:
-            self.prods['acqp_bar']['ymax'] = 2.1
-            self.prods['acqp_bar']['yticks'] = [0, 0.5, 1, 1.5, 2] 
-            self.prods['acqp_bar']['ytick_labels'] = ['0', '0.5', '1', '1.5', '2']
-        else:
-            self.prods['acqp_bar']['ymax'] = 1.1
-            self.prods['acqp_bar']['yticks'] = [0, 0.25, 0.5, 0.75, 1] 
-            self.prods['acqp_bar']['ytick_labels'] = ['0', '0.25', '0.50', '0.75', '1.00']            
-
-
-        self.acqp_bar = self.nbm.ACQP.tolist()
-        self.prods['acqp_bar']['data'] = self.acqp_bar
-
-        self.nbm['ZR'] = self.nbm['ZR']*0.01
-        self.zr_bar = self.nbm.ZR.tolist()
-        self.prods['zr_bar']['data'] = self.zr_bar
-        
-        self.nbm['ACZR'] = self.nbm['ZR'].cumsum()
-        self.aczr_bar =self.nbm.ACZR.tolist()
-        self.prods['aczr_bar']['data'] = self.aczr_bar
 
         self.nbm['VIS'] = self.nbm['VIS']*0.1
 
-        self.nbm['SKT'] = self.nbm['WSP'] * 1.15
-        self.nbm['GKT'] = self.nbm['GST'] * 1.15
-        self.decimals = pd.Series([1, 1], index=['SKT', 'GKT'])
-        self.nbm.round(self.decimals)
+
 
         self.t_bar = self.nbm.TMP.tolist()
         self.t_bar = np.asarray(self.t_bar, dtype=np.float32)
@@ -400,66 +287,13 @@ class NBM:
             self.v_norm.append(vn)
 
 
-        self.wgst_bar = self.nbm.GST.tolist()
-        self.wspd_list_kt = self.nbm.WSP.tolist()
-        self.wspd_list = np.multiply(self.wspd_list_kt,1.151)
-        self.wspd_list = [round(x) for x in self.wspd_list]
-        self.wspd_arr = np.asarray(self.wspd_list)
-        self.wspd_list = self.wspd_arr.astype(int)
-
-        self.wgst_list_kt = self.nbm.GST.tolist()
-        self.wgst_list = np.multiply(self.wgst_list_kt,1.151)
-        self.wgst_list = [round(x) for x in self.wgst_list]
-        self.wgst_arr = np.asarray(self.wgst_list)
-        self.wgst_list = self.wgst_arr.astype(int)
-
+        self.wgst_bar = self.nbm.WGS.tolist()
+        self.wspd_list = self.nbm.WSP.tolist()
+        self.wgst_list = self.nbm.WGS.tolist()
         self.sky_list = self.nbm.SKY.tolist()
+        self.cig_list = self.nbm.CIG.tolist()
+        self.vis_list = self.nbm.VIS.tolist()        
 
-        if self.bulletin_type == 'nbhtx':
-            self.cig_list = self.nbm.CIG.tolist()
-            self.lcb_list = self.nbm.LCB.tolist()
-            self.vis_list = self.nbm.VIS.tolist()        
-
-        self.wc_bar = []
-        self.ttfb_bar = []
-        for chill in range(0,len(self.wspd_bar)):
-            t = self.t_bar[chill]
-            s = self.wspd_bar[chill]
-            self.wc = 35.74 + 0.6215*t - 35.75*(s**0.16) + 0.4275*t*(s**0.16)
-            if self.wc <= t:
-                self.final = round(self.wc)
-            else:
-                self.final = round(t)
-
-            if self.final >= -15:   #   0 to -15 : >30 minutes
-                self.fbt = 4
-            if self.final < -15:    # -15 to -30 : 15 to 30 minutes
-                self.fbt = 3
-            if self.final < -30:    # -30 to -50 : <15 minutes
-                self.fbt = 2
-            if self.final < -50:    #    <  -50  : < 5 minutes
-                self.fbt = 1
-
-            self.wc_bar.append(self.final)
-            self.ttfb_bar.append(self.fbt)
-
-        self.wc_bar = np.asarray(self.wc_bar, dtype=np.float32)
-        #self.wc_cat = self.categorize(self.wc_bar,'wc')
-        self.wc_bar_shift = self.wc_bar + 20
-        self.prods['wc_bar']['data'] = self.wc_bar_shift
-        #map_plot_stations[key] = {'lon':lon,'lat':lon,'wc_cat':wc_cat[0]}
-
-        # Temp (t) and wind chill (wc) go on same panel, 
-        # so using min(wc) and max(t) to define bounds for 'twc'
-        # using a temperature_bounds function
-        #self.twc_tick_list,self.twc_tick_labels = self.temperature_bounds(self.t_bar_shift,self.wc_bar_shift)
-
-        # sometimes we have to convert units because they're in tenths or hundredths
-
-        self.vis = self.nbm.loc[:, ['VIS']]
-        self.vis.clip(upper=7.0,inplace=True)
-        self.vis_list = self.nbm.VIS.tolist()
-        return
 
 
     def taf(self):
@@ -867,5 +701,5 @@ class NBM:
 
 
 
-test = NBM('KCAR', 'nbhtx', True, False)
+test = LAMP('KCAR', True, False)
 
