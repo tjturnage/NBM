@@ -86,24 +86,18 @@ class LAMP:
         
         self.column_list = []
         self.data = []
+        self.main()
         
-        self.taf = None
-        self.taf_old = None
-        self.master()
-        
-
-    def master(self):
+    def main(self):
         self.get_lamp()
         #self.create_trimmed_file()
         self.make_idx()
         self.create_df()
         self.expand_df()
-        # self.get_observation()
-        # self.taf()
+        self.get_observation()
+        self.taf()
         # if self.plot_flag:
         #     self.plot()
-
-
 
     def get_lamp(self):
         if self.download:
@@ -149,18 +143,15 @@ class LAMP:
             self.mtr_text = str(self.r.content)
             self.mtr_match = mtr_ob.search(str(self.mtr_text))
             if (self.mtr_match is not None):
-                print(self.mtr_match[0])
+                #print(self.mtr_match[0])
                 self.ob_str = self.mtr_match[0]
+                if self.ob_str[-1] == 'M':
+                    self.return_ob = self.ob_str[:-1]
+                else:
+                    self.return_ob = self.ob_str                    
             else:
-                self.ob_str = 'No match!'
+                self.return_ob = 'No match!'
             return
-
-
-    # def file_path(self):
-    #     self.raw_file = f'nbm_raw_{self.bulletin_type}.txt'
-    #     self.trimmed_file = f'nbm_trimmed_{self.bulletin_type}.txt'
-    #     self.raw_path = os.path.join(self.NBM_dir, self.raw_file)
-    #     self.trimmed_path = os.path.join(self.NBM_dir, self.trimmed_file)
 
 
     def make_idx(self):
@@ -213,6 +204,12 @@ class LAMP:
         self.col_rename_dict = {i:j for i,j in zip(els[:-1],self.elements[1:])}
         self.nbm.rename(columns=self.col_rename_dict, inplace=True)
         self.nbm.set_index(self.data_times, inplace=True)
+
+        self.nbm.replace(to_replace ="NG", value ="-99", inplace=True) 
+        self.nbm.replace(to_replace ="OV", value ="OVC", inplace=True) 
+        self.nbm.replace(to_replace ="BK", value ="BKN", inplace=True) 
+        self.nbm.replace(to_replace ="CL", value ="CLR", inplace=True) 
+        self.nbm.replace(to_replace ="FW", value ="FEW", inplace=True)         
         return
 
 
@@ -222,28 +219,16 @@ class LAMP:
     # option of plotting either way.
     def expand_df(self):
 
-        #self.pop_bar = self.nbm.PoP.tolist()
-
-        #self.pop_ts = self.nbm['PoP'] 
         self.nbm['PoPF'] = self.nbm.PPO.ffill()
+        self.nbm.PoPF = self.nbm.PoPF.astype('int32')
         self.popf_ts =self.nbm.loc[:, ['PoPF']]
-        #self.pop_fill_ts[0] = 0.0
+
         self.prods['popf_ts']['data'] = self.popf_ts
-        #self.prods['pop_ts']['data'] = self.pop_ts
         self.popf_bar = self.nbm.PoPF.to_list()
         self.prods['popf_bar']['data'] = self.popf_bar
         
-
-        # self.nbm['APTSF'] = self.nbm.TST.ffill()
-        # # this in not conditional probability like the others
-        # self.aptsf_bar = self.nbm.APTSF.to_list()
-        # self.aptsf_ts = self.nbm.loc[:, ['APTSF']]
-        # self.prods['aptsf_bar']['data'] = self.aptsf_bar
-        # self.prods['aptsf_ts']['data'] = self.aptsf_ts
-
-
-
         self.nbm['PSNF'] = self.nbm.POS.ffill()
+        self.nbm.PSNF = self.nbm.PSNF.astype('int32')
         self.nbm['APSNF'] = self.nbm['PoPF'] * self.nbm['PSNF']/100
         self.apsnf_bar = self.nbm.APSNF.to_list()
         self.apsnf_ts = self.nbm.loc[:, ['APSNF']]
@@ -251,27 +236,19 @@ class LAMP:
         self.prods['apsnf_ts']['data'] = self.apsnf_ts
 
         self.nbm['PZRF'] = self.nbm.POZ.ffill()
+        self.nbm.PZRF = self.nbm.PZRF.astype('int32')
         self.nbm['APZRF'] = self.nbm['PoPF'] * self.nbm['PZRF']/100
         self.apzrf_bar = self.nbm.APZRF.to_list()
         self.apzrf_ts = self.nbm.loc[:, ['APZRF']]
         self.prods['apzrf_bar']['data'] = self.apzrf_bar
         self.prods['apzrf_ts']['data'] = self.apzrf_ts
 
+        self.nbm.VIS = self.nbm.VIS.astype('int32')
+        self.vis_cat_list = self.nbm.VIS.tolist()    
 
-        self.nbm['VIS'] = self.nbm['VIS']*0.1
 
-
-
-        self.t_bar = self.nbm.TMP.tolist()
-        self.t_bar = np.asarray(self.t_bar, dtype=np.float32)
-        self.t_bar_shift = self.t_bar + 20
-        self.prods['t_bar']['data'] = self.t_bar_shift
-        
-        self.dp_bar = self.nbm.DPT.tolist()
-        self.dp_bar = np.asarray(self.dp_bar, dtype=np.float32)        
-        
-        self.wdir_list = self.nbm.WDR.tolist()
-
+        self.nbm.WDR = self.nbm.WDR.astype('int32')
+        self.nbm.WSP = self.nbm.WSP.astype('int32')
         self.wdir = self.nbm.loc[:, ['WDR']]
         self.wspd = self.nbm.loc[:, ['WSP']]
         self.wdir_bar = self.nbm.WDR.tolist()
@@ -287,104 +264,129 @@ class LAMP:
             self.v_norm.append(vn)
 
 
+        self.nbm.WGS = self.nbm.WGS.astype('int32')
         self.wgst_bar = self.nbm.WGS.tolist()
         self.wspd_list = self.nbm.WSP.tolist()
         self.wgst_list = self.nbm.WGS.tolist()
-        self.sky_list = self.nbm.SKY.tolist()
-        self.cig_list = self.nbm.CIG.tolist()
-        self.vis_list = self.nbm.VIS.tolist()        
+        #self.sky_list = self.nbm.SKY.tolist()
 
+        self.nbm.CIG = self.nbm.CIG.astype('int32')
+        self.cig_cat_list = self.nbm.CIG.tolist()
+        self.cld_list = self.nbm.CLD.tolist()
+        
+        return
 
 
     def taf(self):
-        self.taf_df = self.nbm
-        self.taf_dict = {}
-        
-        def ccalc(cig,hour='current'):
-            if str(cig) == '-88':
-                cigf = ''
-                ccat = 5
-            elif cig >= 35:
-                cigf = 'BKN' + '{:03d}'.format(cig)
-                ccat = 5
-            elif cig >= 30:
-                cigf = 'BKN' + '{:03d}'.format(cig)
-                ccat = 4
-            elif cig >= 20:
-                cigf = 'BKN' + '{:03d}'.format(cig)
-                ccat = 3
-            elif cig >= 10:
-                cigf = 'BKN' + '{:03d}'.format(cig)
-                ccat = 2
-            elif cig >= 5:
-                cigf = 'OVC' + '{:03d}'.format(cig)
-                ccat = 1
-            elif cig >= 3:
-                cigf = 'OVC' + '{:03d}'.format(cig)
-                ccat = 0
-            else:
-                cigf = 'VV' + '{:03d}'.format(cig)
-                ccat = 0
+        """
+        TYP* conditional precipitation type at the hour.
+        CLD forecast categories of total sky cover valid at that hour.
+        CIG ceiling height categorical forecasts at the hour.
+        CCG conditional ceiling height categorical forecasts if precipitation occurring.
+        VIS visibility categorical forecasts at the hour.
+        CVS conditional visibility categorical forecasts if pcpn occurring at the hour
+        OBV obstruction to vision categorical forecasts at the hour.
 
-            return cigf, ccat
+        """
 
-        def vcalc(vsby,hour='current'):
-            #vsby_prev = self.vis_list[t-0]
-            vsby = self.vis_list[t]
-            if vsby > 6:
-                visf = 'P6'
-                vcat = 5        #'VFR'
-            elif vsby >= 3:
-                visf = '{:.0f}'.format(vsby)
-                vcat = 4        #'MVFR'
-            # elif vsby >= 2:
-            #     visf = '{:.0f}'.format(vsby)
-            #     vcat = 3     
-            elif vsby >= 1:
-                visf = '{:.0f}'.format(vsby)
-                vcat = 2        #'IFR'
-            elif vsby >= 0.5:
-                visf = '3/4'
-                vcat = 1        #'LIFR'
+        self.taf_text = ''
+        self.idx24 = self.idx0_utc + timedelta(days=1)
+        header_dts = self.idx0_utc.strftime('%d%H%M')
+
+        dyhr_beg = self.idx0_utc.strftime('%d%H')
+        dyhr_end = self.idx24.strftime('%d%H')
+        header_str = 'TAF\n{} {}Z {}/{} {}\n'.format(self.station, header_dts, dyhr_beg, dyhr_end, self.return_ob)
+        self.taf_text = self.taf_text + header_str
+        #print(self.taf_text)
+
+        def ccalc(ccat,cld):
+            """
+            1	< 200 feet
+            2	200 - 400 feet
+            3	500 - 900 feet
+            4	1000 - 1900 feet
+            5	2000 - 3000 feet
+            6	3100 - 6500 feet
+            7	6600 - 12,000 feet
+            8	> 12,000 feet or unlimited ceiling
+            """
+            
+            if cld != 'CLR':
+                if ccat == 1:
+                    cigf = 'VV001'
+                elif ccat == 2:
+                    cigf =  + '{}003'.format(cld)
+                elif ccat == 3:
+                    cigf = '{}006'.format(cld)
+                elif ccat == 4:
+                    cigf = '{}015'.format(cld)
+                elif ccat == 5:
+                    cigf = '{}025'.format(cld)
+                elif ccat == 6:
+                    cigf = '{}025'.format(cld)
+                elif ccat == 7:
+                    cigf = '{}100'.format(cld)
+                else:
+                    cigf = '{}200'.format(cld)
             else:
+                    cigf = cld                 
+
+            return cigf
+
+
+        def vcalc(vcat):
+            """
+            1	< 1/2 miles
+            2	1/2 - < 1 miles
+            3	1 - < 2 miles
+            4	2 - < 3 miles
+            5	3 - 5 miles
+            6	6 miles
+            7	> 6 miles
+            """
+            
+            if vcat == 1:
                 visf = '1/4'
-                vcat = 0        #'VLIFR'
-
-            return visf, vcat
-
+            elif vcat == 2:
+                visf = '3/4'
+            elif vcat == 3:
+                visf = '1 1/2'                
+            elif vcat == 4:
+                visf = '2 1/2'
+            elif vcat == 5:
+                visf = '3'
+            elif vcat == 6:
+                visf = '6'
+            else:
+                visf = 'P6'
+            return visf
+                
+                
         def wx_str(v):
             thresh = 30
             wx = ''
-            q = self.qp_bar[v]
-            s = self.sn_bar[v]
-            z = self.zr_bar[v]
-    
-            if self.aptsf_bar[v] > thresh:
-                wx = wx + 'TS'
-            if self.apraf_bar[v] > thresh:
-                wx = wx + 'RA'
-#            if self.apraf_bar[v] > thresh or q > 0:
-#                wx = wx + 'RA'
-            if self.applf_bar[v] > thresh:
-                wx = wx + 'PL'
-            if self.apsnf_bar[v] > thresh or s > 0:
+
+            if self.apsnf_bar[v] > thresh:
                 wx = wx + 'SN'
-            if self.apzrf_bar[v] > thresh or z > 0:
+            if self.apzrf_bar[v] > thresh:
                 wx = wx + 'ZR'
+
             if (wx != ''):
-                if self.vis_list[v] < 1:
+                if self.vis_cat_list[v] == 1:
                     wx = '+' + wx
-                elif self.vis_list[v] <= 2:
+                elif self.vis_cat_list[v] == 2:
                     wx = wx
-                elif self.vis_list[v] <= 3:
+                elif self.vis_cat_list[v] <= 5:
                     wx = '-' + wx + ' BR'
                 else:
                     wx = '-' + wx
+
             else:
-                if self.vis_list[v] < 3:
+                if self.vis_cat_list[v] < 2:
                     wx = 'FG'
-                elif self.vis_list[v] < 6:
+                elif self.vis_cat_list[v] < 7:
                     wx = 'BR'
+
             return wx
 
 
@@ -398,27 +400,16 @@ class LAMP:
                 flag = False
             return g,flag
 
-
-        #--------------------------------------------
-
-        self.idx24 = self.idx0_utc + timedelta(days=1)
-        header_dts = self.idx0_utc.strftime('%d%H%M')
-        self.taf_text = ''
-
-        dyhr_beg = self.idx0_utc.strftime('%d%H')
-        dyhr_end = self.idx24.strftime('%d%H')
-        header_str = 'TAF\n{} {}Z {}/{} {}\n'.format(self.station, header_dts, dyhr_beg, dyhr_end, self.ob_str)
-        self.taf_text = self.taf_text + header_str
+    ############ LOOP THRU TIMES ##############
 
         for t in range(2,len(self.data_times)):
             wc = False
-            dt = self.data_times[t]
-            
+
             dts = self.data_times[t].strftime('FM%d%H%M')
 
-            wdir_prev2 = self.wdir_list[t-2]
-            wdir_prev = self.wdir_list[t-1]
-            wdir = self.wdir_list[t]
+            wdir_prev2 = self.wdir_bar[t-2]
+            wdir_prev = self.wdir_bar[t-1]
+            wdir = self.wdir_bar[t]
             wdirf = '{:02d}'.format(wdir) + '0'
             wdir_diff = np.absolute((wdir_prev + 50) - (wdir + 50))
             wdir_diff2 = np.absolute((wdir_prev2 + 50) - (wdir + 50))
@@ -426,7 +417,10 @@ class LAMP:
             wspd_prev2 = self.wspd_list[t-2]
             wspd_prev = self.wspd_list[t-1]
             wspd = self.wspd_list[t]
-            wspdf = '{:02d}'.format(wspd)
+            if wspd <= 1:
+                wspdf = '00'
+            else:
+                wspdf = '{:02d}'.format(wspd)
             wspd_diff = np.absolute(wspd_prev - wspd)
             wspd_diff2 = np.absolute(wspd_prev2 - wspd)
 
@@ -454,61 +448,44 @@ class LAMP:
             else:
                 delta_wx = False
 
-            #------ LCB    
-            lcb = self.lcb_list[t]
-            if np.abs(self.cig_list[t] - lcb) > 2:
-                lcbf = 'SCT' + '{:03d}'.format(lcb)
-            else:
-                lcbf = ''
 
             #------ CIG
-            cigf_prev2,ccat_prev2 = ccalc(self.cig_list[t-2])
-            cigf_prev,ccat_prev = ccalc(self.cig_list[t-1])
-            cigf,ccat = ccalc(self.cig_list[t])            
-            ccat_diff = np.absolute(ccat_prev - ccat)
-            ccat_diff2 = np.absolute(ccat_prev2 - ccat)
-
-
-            #------ VIS                            
-            visf_prev2,vcat_prev2 = vcalc(self.vis_list[t-2]) 
-            visf_prev,vcat_prev = vcalc(self.vis_list[t-1])         
-            visf,vcat = vcalc(self.vis_list[t])
-            vcat_diff = np.absolute(vcat - vcat_prev)
-            vcat_diff2 = np.absolute(vcat - vcat_prev2)
+            cld = self.cld_list[t]
+            ccat = self.cig_cat_list[t]
+            ccat_prev = self.cig_cat_list[t-1]
+            ccat_prev2 = self.cig_cat_list[t-2]
+            ccat_test = (ccat != ccat_prev and ccat != ccat_prev2)
             
-            #------ CATEGORY   
-            if (vcat_diff > 0 and vcat_diff2 > 0) or (ccat_diff > 0 and ccat_diff2 > 0):
+            cigf = ccalc(ccat,cld)
+            
+            #------ VIS
+            vcat = self.vis_cat_list[t]
+            visf = vcalc(vcat)
+            
+            vcat_prev = self.vis_cat_list[t-1]
+            vcat_prev2 = self.vis_cat_list[t-2] 
+
+            #------ CATEGORY TEST
+            vcat_test = (vcat != vcat_prev and vcat != vcat_prev2)
+            if vcat_test or ccat_test:
                 delta_cat = True
             else:
                 delta_cat = False
 
-            
-            self.taf_dict[dt] = {'dt_str': dts,
-                                 'wdir_str': wdirf,
-                                 'delta_wdir': wdirf,
-                                 'wspd_str': wspdf,
-                                 'delta_wspd': wspd_diff,
-                                 'wgst_str': g,
-                                 'cig_str': cigf,
-                                 'lcb_str': lcbf,
-                                 'delta_ccat': ccat_diff,
-                                 'vis_str': visf,
-                                 'wx_str': wx,
-                                 'delta_vcat': vcat_diff
-                                 }    
-
-
-            
-            line_str = '{} {}{}{} {}SM {} {} {}'.format(dts, wdirf, wspdf, g, visf, wx, lcbf, cigf)
+    ######### Format TAF #########
+            if wspd <= 1:
+                wdirf = '000'
+             
+            line_str = '{} {}{}{} {}SM {} {}'.format(dts, wdirf, wspdf, g, visf, wx, cigf)
             taf_line = re.sub('\s+',' ',line_str)
             taf_line = '     ' + taf_line + '\n'
 
             if wc or delta_cat or delta_wx:
                 self.taf_text = self.taf_text + taf_line
-
-            
+           
         self.taf_text = self.taf_text[:-1] + '=\n'
         print(self.taf_text)
+        return
 
 
 
@@ -538,10 +515,10 @@ class LAMP:
         
         bar_align = "center"   # "edge"
         if self.bulletin_type == 'nbhtx':
-            reg_bar_width = 1/35
+            #reg_bar_width = 1/35
             pop_bar_width = 1/32
         else:
-            reg_bar_width = 4/35
+            #reg_bar_width = 4/35
             pop_bar_width = 7/35            
         fig_set = {'4':(14,13),'5':(14,15),'6':(12,18)}
         fig, axes = plt.subplots(len(self.products),1,figsize=fig_set[str(len(self.products))],sharex=False,subplot_kw={'xlim': (self.idx[0],self.idx[-1])})
@@ -638,60 +615,9 @@ class LAMP:
                 self.a.set_ylabel(self.prods[self.y]['title'], rotation=0)
                 self.a.get_xaxis().set_visible(True)
 
-
-            # specialized treatment for ranges and gridlines
-            if self.y in ['winter_bar']:
-                self.gs = self.GridShader(self.a, facecolor="lightgrey", first=True, alpha=0.0) 
-                self.a.grid(which='major', axis='y')
-                self.a.set_xticks(self.data_times)
-                color = 'tab:red'
-                self.a.bar(self.data_times,self.prods['acsn_bar']['data'],width=pop_bar_width, zorder=10,align=bar_align,bottom=self.prods['acsn_bar']['bottom'],color=self.prods['acsn_bar']['color'])
-                self.a.set_ylabel(self.prods['acsn_bar']['title'], rotation=0, color=self.prods['acsn_bar']['color'])  # we already handled the x-label with ax1                
-      
-                
-                color = 'tab:blue'
-                self.a2 = self.a.twinx()  # instantiate a second axes that shares the same x-axis
-                self.a2.bar(self.data_times,self.prods['aczr_bar']['data'],width=pop_bar_width, zorder=10,align=bar_align,bottom=self.prods['aczr_bar']['bottom'],color=self.prods['aczr_bar']['color'])
-                self.a2.set_ylabel(self.prods['aczr_bar']['title'], rotation=0, color=self.prods['acsn_bar']['color'])  # we already handled the x-label with ax1
-                self.a2.tick_params(axis='y', labelcolor=color)
-                
-
-    
-            if self.y in ['t_bar','wc_bar']:
-                tick_list = self.prods['wc_bar']['yticks']
-                tick_labels = self.prods['wc_bar']['ytick_labels']
-                self.plotting()
-                self.a.set_ylim(tick_list[0],tick_list[-1])
-                self.a.bar(self.data_times,self.prods['t_bar']['data'],width=reg_bar_width, zorder=10,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods['t_bar']['color'])
-                self.a.bar(self.data_times,self.prods['wc_bar']['data'],width=reg_bar_width, zorder=10,align=bar_align,bottom=self.prods[self.y]['bottom'],color=self.prods['wc_bar']['color'])
-                self.a.set_ylabel(self.prods['wc_bar']['title'], rotation=0)
-                self.a.get_xaxis().set_visible(True)
-
-
         
-            # these are lists that use matplotlib bar to create bar graphs
-            if self.y in ['apra_bar','apzr_bar','apsn_bar']:
-                self.gs = self.GridShader(self.a, facecolor="lightgrey", first=True, alpha=0.0) 
-                self.a.set_xticks(self.idx)
-                self.a.set_ylim(self.prods[self.y]['ymin'],self.prods[self.y]['ymax'])
-                #a.bar(data_list,prods[y]['data'],width=1/25, align="edge",color=prods[y]['color'])
-                self.a.bar(self.data_times,self.prods[self.y]['data'],width=pop_bar_width, align="center",color=self.prods[self.y]['color'])
-                self.a.set_ylabel(self.prods[self.y]['title'], rotation=0)
-                self.a.get_xaxis().set_visible(True)
-                self.a.set(yticks = self.prods[self.y]['yticks'], yticklabels = self.prods[self.y]['ytick_labels'])
 
-                
-            if self.y in ['ttfb_bar','vis_cat_bar','zr_cat_bar']:
-                self.gs = self.GridShader(self.a, facecolor="lightgrey", first=True, alpha=0.0) 
-                self.a.grid(which='major', axis='y')
-                self.a.set_xticks(self.idx)
-                self.a.set_ylim(self.prods[self.y]['ymin'],self.prods[self.y]['ymax'])
-                self.a.bar(self.data_times,self.prods[self.y]['data'],width=reg_bar_width,  zorder=10,align=bar_align,color=self.prods[self.y]['color'])
-    
-                self.a.set_ylabel(self.prods[self.y]['title'], rotation=0)
-                self.a.get_xaxis().set_visible(True)
-                self.a.set(yticks = self.prods[self.y]['yticks'], yticklabels = self.prods[self.y]['ytick_labels'])
-        
+
         self.image_file = self.station + '_NBM_' + self.bulletin_type + '.png'
         self.image_dst_path = os.path.join(NBM_dir,self.image_file)
         #plt.show()
@@ -701,5 +627,17 @@ class LAMP:
 
 
 
-test = LAMP('KCAR', True, False)
+    # if __name__ == "__main__":
+        
+    #     #for stn in ['GRR', 'MKG','LAN']
+
+kgrr = LAMP('KGRR',True,False)
+klan = LAMP('KLAN',True,False)
+kmkg = LAMP('KMKG',True,False)
+kazo = LAMP('KAZO',True,False)
+kbtl = LAMP('KBTL',True,False)
+kjxn = LAMP('KJXN',True,False)
+
+
+#test = LAMP('KCAR', True, False)
 

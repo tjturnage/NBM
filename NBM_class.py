@@ -466,7 +466,7 @@ class NBM:
         self.taf_df = self.nbm
         self.taf_dict = {}
         
-        def ccalc(cig,hour='current'):
+        def ccalc(cig):
             if str(cig) == '-88':
                 cigf = ''
                 ccat = 5
@@ -494,7 +494,7 @@ class NBM:
 
             return cigf, ccat
 
-        def vcalc(vsby,hour='current'):
+        def vcalc(vsby):
             #vsby_prev = self.vis_list[t-0]
             vsby = self.vis_list[t]
             if vsby > 6:
@@ -519,9 +519,9 @@ class NBM:
             return visf, vcat
 
         def wx_str(v):
-            thresh = 30
+            thresh = 25
             wx = ''
-            q = self.qp_bar[v]
+            #q = self.qp_bar[v]
             s = self.sn_bar[v]
             z = self.zr_bar[v]
     
@@ -529,8 +529,6 @@ class NBM:
                 wx = wx + 'TS'
             if self.apraf_bar[v] > thresh:
                 wx = wx + 'RA'
-#            if self.apraf_bar[v] > thresh or q > 0:
-#                wx = wx + 'RA'
             if self.applf_bar[v] > thresh:
                 wx = wx + 'PL'
             if self.apsnf_bar[v] > thresh or s > 0:
@@ -549,7 +547,7 @@ class NBM:
             else:
                 if self.vis_list[v] < 3:
                     wx = 'FG'
-                elif self.vis_list[v] < 6:
+                elif self.vis_list[v] < 7:
                     wx = 'BR'
             return wx
 
@@ -588,13 +586,20 @@ class NBM:
             wdirf = '{:02d}'.format(wdir) + '0'
             wdir_diff = np.absolute((wdir_prev + 50) - (wdir + 50))
             wdir_diff2 = np.absolute((wdir_prev2 + 50) - (wdir + 50))
+            wdir_thresh = 30
+            wdir_test = (wdir_diff > wdir_thresh and wdir_diff2 > wdir_thresh)
             
             wspd_prev2 = self.wspd_list[t-2]
             wspd_prev = self.wspd_list[t-1]
             wspd = self.wspd_list[t]
+
+            wspd = self.wspd_list[t]
             wspdf = '{:02d}'.format(wspd)
             wspd_diff = np.absolute(wspd_prev - wspd)
             wspd_diff2 = np.absolute(wspd_prev2 - wspd)
+            wspd_thresh = 8
+            wspd_test = (wspd_diff > wspd_thresh and wspd_diff2 > wspd_thresh)
+
 
             #----- GUSTS
             g_prev, g_flag_prev = calc_wgst(self.wgst_list[t-1])
@@ -607,7 +612,7 @@ class NBM:
             if gc is False:
                 wspdf = wspdf + 'KT'
             
-            if (wdir_diff > 30 and wdir_diff2 > 30 and wspd > 8) or (wspd_diff > 8 and wspd_diff2 > 8) or gc:
+            if ((wdir_test and wspd > 8) or wspd_test or gc):
                 wc = True
 
             #------ WX    
@@ -631,19 +636,22 @@ class NBM:
             cigf_prev2,ccat_prev2 = ccalc(self.cig_list[t-2])
             cigf_prev,ccat_prev = ccalc(self.cig_list[t-1])
             cigf,ccat = ccalc(self.cig_list[t])            
-            ccat_diff = np.absolute(ccat_prev - ccat)
-            ccat_diff2 = np.absolute(ccat_prev2 - ccat)
+            # ccat_diff = np.absolute(ccat_prev - ccat)
+            # ccat_diff2 = np.absolute(ccat_prev2 - ccat)
+            ccat_test = (ccat != ccat_prev and ccat != ccat_prev2)
 
 
             #------ VIS                            
             visf_prev2,vcat_prev2 = vcalc(self.vis_list[t-2]) 
             visf_prev,vcat_prev = vcalc(self.vis_list[t-1])         
             visf,vcat = vcalc(self.vis_list[t])
-            vcat_diff = np.absolute(vcat - vcat_prev)
-            vcat_diff2 = np.absolute(vcat - vcat_prev2)
+            # vcat_diff = np.absolute(vcat - vcat_prev)
+            # vcat_diff2 = np.absolute(vcat - vcat_prev2)
+            vcat_test = (vcat != vcat_prev and vcat != vcat_prev2)
             
             #------ CATEGORY   
-            if (vcat_diff > 0 and vcat_diff2 > 0) or (ccat_diff > 0 and ccat_diff2 > 0):
+            #if (vcat_diff > 0 and vcat_diff2 > 0) or (ccat_diff > 0 and ccat_diff2 > 0):
+            if (vcat_test or ccat_test):
                 delta_cat = True
             else:
                 delta_cat = False
@@ -657,10 +665,8 @@ class NBM:
                                  'wgst_str': g,
                                  'cig_str': cigf,
                                  'lcb_str': lcbf,
-                                 'delta_ccat': ccat_diff,
                                  'vis_str': visf,
                                  'wx_str': wx,
-                                 'delta_vcat': vcat_diff
                                  }    
 
 
